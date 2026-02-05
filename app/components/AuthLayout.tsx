@@ -2,9 +2,11 @@ import React from "react";
 
 export function AuthLayout({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#E78995] to-[#FDC1CB] p-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] p-4">
       {/* Main Card Container */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col md:flex-row min-h-[500px]">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col md:flex-row min-h-[500px] relative">
+        {/* Left Accent Bar */}
+        <div className="absolute left-0 top-0 bottom-0 w-2 bg-gradient-to-b from-[#F43F5E] to-[#FDA4AF] opacity-80 z-20"></div>
         
         {/* Left Side - Form */}
         <div className="w-full md:w-[45%] p-12 flex flex-col justify-center relative z-10">

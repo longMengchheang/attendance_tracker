@@ -1,54 +1,106 @@
-import Link from "next/link";
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { AuthLayout } from "../../components/AuthLayout";
-import { Button } from "../../components/ui/Button";
-import { Input } from "../../components/ui/Input";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+        setError('Please enter both email and password.');
+        return;
+    }
+    // Mock login logic based on email
+    if (email.includes('student')) {
+        router.push('/dashboard/student');
+    } else {
+        router.push('/dashboard'); // Default to teacher/main dashboard
+    }
+  };
+
+
   return (
-    <AuthLayout title="Welcome back">
-      <form className="space-y-6 w-full max-w-sm mx-auto md:mx-0">
-        <div className="space-y-4">
-          <Input 
-            type="email" 
-            placeholder="Email" 
-            required 
-          />
-          <Input 
-            type="password" 
-            placeholder="Password" 
-            required 
-          />
-        </div>
+    <AuthLayout title="">
+      <div className="w-full max-w-sm mx-auto md:mx-0">
+        
+         <div className="text-center md:text-left mb-8">
+            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Welcome Back</h1>
+            <p className="text-gray-500 mt-2 text-sm leading-relaxed">Sign in to manage your classes and attendance</p>
+         </div>
 
-        <div className="flex items-center justify-between text-sm">
-          <label className="flex items-center space-x-2 cursor-pointer text-gray-600">
-            <input 
-              type="checkbox" 
-              className="w-4 h-4 rounded border-gray-300 text-[#F5A9B8] focus:ring-[#F5A9B8]" 
-            />
-            <span>Remember Me</span>
-          </label>
-          <Link 
-            href="/forgot-password" 
-            className="text-gray-500 hover:text-gray-700"
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div className="space-y-2">
+            <label className="block text-sm font-bold text-gray-700 ml-1">Email Address</label>
+            <div className="relative group">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#F43F5E] transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                </div>
+                <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl p-3 pl-10 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none transition-all shadow-inner text-gray-900"
+                placeholder="name@example.com"
+                />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+             <label className="block text-sm font-bold text-gray-700 ml-1">Password</label>
+             <div className="relative group">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#F43F5E] transition-colors">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </div>
+                <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl p-3 pl-10 pr-10 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none transition-all shadow-inner text-gray-900"
+                    placeholder="Enter your password"
+                />
+                <button 
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+             </div>
+             
+             {/* Forgot Password moved here */}
+             <div className="flex justify-end pt-1">
+                 <Link href="/forgot-password" className="text-xs font-semibold text-[#F43F5E]/80 hover:text-[#F43F5E] hover:underline transition-colors">
+                    Forgot Password?
+                </Link>
+             </div>
+
+             {error && <p className="text-xs text-red-500 flex items-center gap-1 font-medium animate-pulse"><AlertCircle size={14}/> {error}</p>}
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-gradient-to-r from-[#F43F5E] to-[#E11D48] text-white py-3.5 rounded-xl font-bold hover:shadow-lg hover:shadow-[#F43F5E]/30 hover:-translate-y-0.5 transition-all duration-200 active:scale-[0.98]"
           >
-            Forgot your password?
-          </Link>
-        </div>
+            Sign In
+          </button>
+        </form>
 
-        <Button fullWidth className="mt-8">
-          Login
-        </Button>
-
-        <div className="text-center mt-6">
-          <Link 
-            href="/signup" 
-            className="text-sm text-gray-500 hover:text-gray-800 underline underline-offset-4"
-          >
-            Don't you have an account?
+        <p className="text-center mt-8 text-sm text-gray-500">
+          Don't have an account?{' '}
+          <Link href="/signup" className="text-[#F43F5E] font-bold hover:underline">
+            Create an account
           </Link>
-        </div>
-      </form>
+        </p>
+      </div>
     </AuthLayout>
   );
 }

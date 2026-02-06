@@ -21,7 +21,9 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [agreed, setAgreed] = useState(false);
 
-  const handleSignup = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.name || !formData.email || !formData.password) {
@@ -39,9 +41,18 @@ export default function SignupPage() {
         return;
     }
 
-    // Store user with role using AuthContext
-    signup(formData.name, formData.email, formData.password, role);
-    router.push('/login');
+    setIsSubmitting(true);
+    setError('');
+
+    const result = await signup(formData.name, formData.email, formData.password, role);
+    
+    if (result.success) {
+      router.push('/login');
+    } else {
+      setError(result.error || 'Registration failed');
+    }
+    
+    setIsSubmitting(false);
   };
 
   return (

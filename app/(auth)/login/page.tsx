@@ -15,17 +15,27 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
         setError('Please enter both email and password.');
         return;
     }
     
-    // Login using AuthContext - role is retrieved from storage
-    // All users route to /dashboard, role-based rendering handles the UI
-    login(email, password);
-    router.push('/dashboard');
+    setIsSubmitting(true);
+    setError('');
+
+    const result = await login(email, password);
+    
+    if (result.success) {
+      router.push('/dashboard');
+    } else {
+      setError(result.error || 'Login failed');
+    }
+    
+    setIsSubmitting(false);
   };
 
 

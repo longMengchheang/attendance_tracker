@@ -6,26 +6,14 @@ import { User, UserRole } from '../types';
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => User | null;
-  signup: (name: string, email: string, password: string, role: UserRole) => void;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signup: (name: string, email: string, password: string, role: UserRole) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'attendance_users';
 const CURRENT_USER_KEY = 'attendance_current_user';
-
-// Mock user storage helpers
-function getStoredUsers(): Record<string, User & { password: string }> {
-  if (typeof window === 'undefined') return {};
-  const data = localStorage.getItem(STORAGE_KEY);
-  return data ? JSON.parse(data) : {};
-}
-
-function saveUsers(users: Record<string, User & { password: string }>) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-}
 
 function getCurrentUser(): User | null {
   if (typeof window === 'undefined') return null;
@@ -52,39 +40,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const signup = (name: string, email: string, password: string, role: UserRole) => {
-    const users = getStoredUsers();
-    const newUser: User & { password: string } = {
-      name,
-      email,
-      password,
-      role,
-    };
-    users[email] = newUser;
-    saveUsers(users);
+  const signup = async (name: string, email: string, password: string, role: UserRole): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, role }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Registration failed' };
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
   };
 
-  const login = (email: string, password: string): User | null => {
-    const users = getStoredUsers();
-    const storedUser = users[email];
-    
-    if (storedUser && storedUser.password === password) {
-      const { password: _, ...userWithoutPassword } = storedUser;
-      setUser(userWithoutPassword);
-      setCurrentUser(userWithoutPassword);
-      return userWithoutPassword;
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Login failed' };
+      }
+
+      const loggedInUser: User = {
+        name: data.user.name,
+        email: data.user.email,
+        role: data.user.role,
+      };
+
+      setUser(loggedInUser);
+      setCurrentUser(loggedInUser);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: 'Network error. Please try again.' };
     }
-    
-    // For demo purposes: if user not found, create a default teacher account
-    // This allows existing users to still login without signup
-    const defaultUser: User = {
-      name: email.split('@')[0],
-      email,
-      role: 'teacher', // Default to teacher for backwards compatibility
-    };
-    setUser(defaultUser);
-    setCurrentUser(defaultUser);
-    return defaultUser;
   };
 
   const logout = () => {

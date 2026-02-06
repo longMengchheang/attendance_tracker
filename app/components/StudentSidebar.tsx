@@ -2,30 +2,30 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Clock, Users, Settings, LogOut, UserCircle } from 'lucide-react';
+import { LayoutDashboard, Clock, Settings, LogOut, UserCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+// Student sidebar items - Dashboard, Ongoing Class (for check-in), Settings
 const sidebarItems = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Ongoing Class', href: '/dashboard/ongoing-class', icon: Clock },
-  { name: 'Student', href: '/dashboard/student', icon: Users },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
 
-export default function Sidebar() {
+export default function StudentSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
   return (
-    <aside className="w-60 bg-[#F43F5E] text-white flex flex-col h-screen fixed left-0 top-0 overflow-y-auto font-sans">
+    <aside className="w-60 bg-[#3B82F6] text-white flex flex-col h-screen fixed left-0 top-0 overflow-y-auto font-sans">
       {/* User Profile Section */}
       <div className="p-6 flex items-center space-x-3 border-b border-white/10">
         <div className="bg-white/20 p-2 rounded-full">
             <UserCircle size={32} />
         </div>
         <div>
-          <h2 className="font-semibold text-lg leading-tight">{user?.name || 'Teacher'}</h2>
-          <p className="text-xs text-white/70 uppercase tracking-wider font-medium">Teacher</p>
+          <h2 className="font-semibold text-lg leading-tight">{user?.name || 'Student'}</h2>
+          <p className="text-xs text-white/70 uppercase tracking-wider font-medium">Student</p>
         </div>
       </div>
 
@@ -40,7 +40,7 @@ export default function Sidebar() {
               href={item.href}
               className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                 isActive
-                  ? 'bg-white text-[#F43F5E] shadow-sm font-bold'
+                  ? 'bg-white text-[#3B82F6] shadow-sm font-bold'
                   : 'text-white/70 hover:bg-white/10 hover:text-white'
               }`}
             >
@@ -64,4 +64,3 @@ export default function Sidebar() {
     </aside>
   );
 }
-

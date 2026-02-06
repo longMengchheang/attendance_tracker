@@ -3,11 +3,19 @@
 import { useState } from 'react';
 import { UserCircle, Lock, Camera, CheckCircle2, Shield } from 'lucide-react';
 import ChangePasswordModal from '@/app/components/dashboard/ChangePasswordModal';
+import { useAuth } from '@/app/context/AuthContext';
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+
+  // Role-based styling
+  const isStudent = user?.role === 'student';
+  const badgeClasses = isStudent 
+    ? 'bg-blue-50 text-blue-600 border-blue-200' 
+    : 'bg-[#FFF0F3] text-[#F43F5E] border-[#F43F5E]/20';
 
   const handleSave = (e: React.FormEvent) => {
       e.preventDefault();
@@ -53,12 +61,12 @@ export default function SettingsPage() {
                             </div>
                         </div>
                         <div>
-                            <h3 className="font-bold text-gray-900 text-xl">Mengchheang</h3>
+                            <h3 className="font-bold text-gray-900 text-xl">{user?.name || 'User'}</h3>
                             <div className="flex items-center gap-2 mt-1">
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#FFF0F3] text-[#F43F5E] border border-[#F43F5E]/20">
-                                    Teacher
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeClasses}`}>
+                                    {isStudent ? 'Student' : 'Teacher'}
                                 </span>
-                                <span className="text-gray-500 text-sm">meng@school.edu</span>
+                                <span className="text-gray-500 text-sm">{user?.email || 'user@school.edu'}</span>
                             </div>
                         </div>
                     </div>
@@ -120,16 +128,6 @@ export default function SettingsPage() {
                     </form>
                 </div>
             </div>
-
-            {/* Security Note (Optional) */}
-            <div className="bg-[#FFF0F3] rounded-lg p-4 border border-[#F43F5E]/20 flex gap-4 items-start">
-                <Shield className="text-[#F43F5E] shrink-0 mt-0.5" size={20} />
-                <div>
-                    <h4 className="font-bold text-[#9F1239] text-sm">Account Security</h4>
-                    <p className="text-[#BE123C] text-sm mt-1">Two-factor authentication is currently disabled. Enable it to add an extra layer of security to your account.</p>
-                </div>
-            </div>
-
        </div>
 
        <ChangePasswordModal 

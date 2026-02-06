@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { AuthLayout } from "../../components/AuthLayout";
+import { useAuth } from "../../context/AuthContext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -19,12 +21,11 @@ export default function LoginPage() {
         setError('Please enter both email and password.');
         return;
     }
-    // Mock login logic based on email
-    if (email.includes('student')) {
-        router.push('/dashboard/student');
-    } else {
-        router.push('/dashboard'); // Default to teacher/main dashboard
-    }
+    
+    // Login using AuthContext - role is retrieved from storage
+    // All users route to /dashboard, role-based rendering handles the UI
+    login(email, password);
+    router.push('/dashboard');
   };
 
 

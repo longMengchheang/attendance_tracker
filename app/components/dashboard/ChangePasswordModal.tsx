@@ -1,6 +1,7 @@
 'use client';
 
 import { X, Lock } from 'lucide-react';
+import { useAuth } from '@/app/context/AuthContext';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -8,7 +9,16 @@ interface ChangePasswordModalProps {
 }
 
 export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordModalProps) {
+  const { user } = useAuth();
+  
   if (!isOpen) return null;
+
+  // Role-based colors
+  const isStudent = user?.role === 'student';
+  const primaryColor = isStudent ? '#3B82F6' : '#F43F5E';
+  const primaryHover = isStudent ? '#2563EB' : '#E11D48';
+  const focusRing = isStudent ? 'focus:ring-blue-200' : 'focus:ring-[#EE7F8F]';
+  const linkColor = isStudent ? 'text-blue-600' : 'text-[#F43F5E]';
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -17,7 +27,7 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
         {/* Header */}
         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                <Lock size={20} className="text-[#F43F5E]" />
+                <Lock size={20} style={{ color: primaryColor }} />
                 Change Password
             </h2>
             <button 
@@ -35,7 +45,7 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
                 <label className="block text-sm font-medium text-gray-700">Current Password</label>
                 <input 
                     type="password" 
-                    className="w-full bg-white border border-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-[#EE7F8F] outline-none text-gray-900"
+                    className={`w-full bg-white border border-gray-200 rounded-lg p-3 focus:ring-2 ${focusRing} outline-none text-gray-900`}
                     placeholder="Enter current password"
                 />
             </div>
@@ -44,7 +54,7 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
                 <label className="block text-sm font-medium text-gray-700">New Password</label>
                 <input 
                     type="password" 
-                    className="w-full bg-white border border-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-[#EE7F8F] outline-none text-gray-900"
+                    className={`w-full bg-white border border-gray-200 rounded-lg p-3 focus:ring-2 ${focusRing} outline-none text-gray-900`}
                     placeholder="Enter new password"
                 />
             </div>
@@ -53,13 +63,13 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
                 <label className="block text-sm font-medium text-gray-700">Confirm New Password</label>
                 <input 
                     type="password" 
-                    className="w-full bg-white border border-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-[#EE7F8F] outline-none text-gray-900"
+                    className={`w-full bg-white border border-gray-200 rounded-lg p-3 focus:ring-2 ${focusRing} outline-none text-gray-900`}
                     placeholder="Confirm new password"
                 />
             </div>
 
             <div className="flex justify-end pt-2">
-                <a href="#" className="text-sm text-[#F43F5E] hover:underline">Forgot password?</a>
+                <a href="#" className={`text-sm ${linkColor} hover:underline`}>Forgot password?</a>
             </div>
         </div>
 
@@ -74,7 +84,10 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
              </button>
              <button 
                 onClick={onClose}
-                className="px-4 py-2 bg-[#F43F5E] text-white font-bold rounded-lg hover:bg-[#E11D48] transition-all shadow-sm"
+                className="px-4 py-2 text-white font-bold rounded-lg transition-all shadow-sm"
+                style={{ backgroundColor: primaryColor }}
+                onMouseOver={(e) => e.currentTarget.style.backgroundColor = primaryHover}
+                onMouseOut={(e) => e.currentTarget.style.backgroundColor = primaryColor}
                 type="button"
              >
                 Update Password
@@ -85,3 +98,4 @@ export default function ChangePasswordModal({ isOpen, onClose }: ChangePasswordM
     </div>
   );
 }
+

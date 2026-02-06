@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { useAuth } from '@/app/context/AuthContext';
+import StudentOngoingClassPage from '@/app/components/dashboard/StudentOngoingClassPage';
 
-// Mock Data
+// Mock Data for Teacher view
 const students = [
   { id: 1, name: 'Sokheng Vong', time: '08:30 AM', status: 'Present', avatar: 'S' },
   { id: 2, name: 'Sovannarith Keo', time: '08:32 AM', status: 'Present', avatar: 'S' },
@@ -18,7 +20,13 @@ const students = [
 ];
 
 export default function OngoingClassPage() {
+  const { user } = useAuth();
   const [filter, setFilter] = useState('All');
+
+  // Role-based rendering: Students see check-in view, Teachers see attendance list
+  if (user?.role === 'student') {
+    return <StudentOngoingClassPage />;
+  }
 
   const filteredStudents = students.filter(s => {
       if (filter === 'All') return true;

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { X, MapPin, Clock, Users, Calendar, Filter, ChevronDown, CheckCircle2, XCircle, AlertCircle, Search, UserCircle } from 'lucide-react';
+import { useAuth } from '@/app/context/AuthContext';
 
 interface ClassData {
   id: number;
@@ -29,11 +30,21 @@ const attendanceData = Array.from({ length: 15 }, (_, i) => ({
 }));
 
 export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassDetailsModalProps) {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'Overview' | 'Students' | 'Attendance'>('Overview');
   const [selectedMonth, setSelectedMonth] = useState('March');
   const [selectedYear, setSelectedYear] = useState('2025');
 
   if (!isOpen || !classData) return null;
+
+  // Role-based colors - students see blue, teachers see red
+  const isStudent = user?.role === 'student';
+  const primaryColor = isStudent ? '#3B82F6' : '#F43F5E';
+  const primaryBg = isStudent ? 'bg-blue-50' : 'bg-[#FFF0F3]';
+  const primaryText = isStudent ? 'text-blue-600' : 'text-[#F43F5E]';
+  const tabActiveBorder = isStudent ? 'border-[#3B82F6]' : 'border-[#F43F5E]';
+  const tabActiveText = isStudent ? 'text-[#3B82F6]' : 'text-[#F43F5E]';
+  const focusRing = isStudent ? 'focus:ring-blue-300' : 'focus:ring-[#F43F5E]';
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -65,11 +76,11 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                     onClick={() => setActiveTab(tab as any)}
                     className={`py-4 text-sm font-bold border-b-2 transition-colors ${
                         activeTab === tab 
-                        ? 'border-[#F43F5E] text-[#F43F5E]' 
+                        ? `${tabActiveBorder} ${tabActiveText}` 
                         : 'border-transparent text-gray-500 hover:text-gray-800'
                     }`}
                 >
-                    {tab} {tab === 'Attendance' && <span className="bg-[#FFF0F3] text-[#F43F5E] px-1.5 py-0.5 rounded text-[10px] ml-1">Report</span>}
+                    {tab} {tab === 'Attendance' && <span className={`${primaryBg} ${primaryText} px-1.5 py-0.5 rounded text-[10px] ml-1`}>Report</span>}
                 </button>
             ))}
         </div>
@@ -82,7 +93,7 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                 <div className="space-y-6 max-w-2xl">
                     <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
                         <div className="flex items-start gap-4">
-                            <div className="w-10 h-10 bg-[#FFF0F3] rounded-lg flex items-center justify-center text-[#F43F5E] shrink-0">
+                            <div className={`w-10 h-10 ${primaryBg} rounded-lg flex items-center justify-center ${primaryText} shrink-0`}>
                                 <MapPin size={20} />
                             </div>
                             <div>
@@ -119,7 +130,7 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                             <input 
                                 type="text" 
                                 placeholder="Search students..." 
-                                className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-[#F43F5E] text-gray-900"
+                                className={`w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 ${focusRing} text-gray-900`}
                             />
                         </div>
                     </div>

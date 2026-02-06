@@ -5,7 +5,9 @@ import StatCard from '@/app/components/dashboard/StatCard';
 import CreateClassModal from '@/app/components/dashboard/CreateClassModal';
 import ClassDetailsModal from '@/app/components/dashboard/ClassDetailsModal';
 import DeleteClassModal from '@/app/components/dashboard/DeleteClassModal';
+import StudentDashboardPage from '@/app/components/dashboard/StudentDashboardPage';
 import { MapPin, Users, MoreVertical, FileText, Edit, Trash2, Eye } from 'lucide-react';
+import { useAuth } from '@/app/context/AuthContext';
 
 // Mock Data
 const classes = [
@@ -52,6 +54,7 @@ const classes = [
 ];
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
   const [selectedClass, setSelectedClass] = useState<typeof classes[0] | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -72,6 +75,13 @@ export default function DashboardPage() {
       if (action === 'delete') setIsDeleteOpen(true);
   };
 
+  // Role-based rendering: Students see StudentDashboardPage
+  // Teachers see the existing dashboard below (unchanged)
+  if (user?.role === 'student') {
+    return <StudentDashboardPage />;
+  }
+
+  // Teacher dashboard (existing code - unchanged)
   return (
     <div className="space-y-12" onClick={() => setActiveMenuId(null)}>
       {/* Greeting Section */}

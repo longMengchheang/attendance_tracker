@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { AuthLayout } from "../../components/AuthLayout";
+import { useAuth } from "../../context/AuthContext";
 
 export default function SignupPage() {
   const router = useRouter();
+  const { signup } = useAuth();
   const [role, setRole] = useState<'student' | 'teacher'>('student');
   const [formData, setFormData] = useState({
     name: '',
@@ -37,7 +39,8 @@ export default function SignupPage() {
         return;
     }
 
-    // Simulate signup
+    // Store user with role using AuthContext
+    signup(formData.name, formData.email, formData.password, role);
     router.push('/login');
   };
 

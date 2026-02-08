@@ -1,15 +1,47 @@
 'use client';
 
-import { CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
+import { deleteClass } from '@/lib/api';
+import { useAuth } from '@/app/context/AuthContext';
 
 interface DeleteClassModalProps {
   isOpen: boolean;
   onClose: () => void;
   className: string;
+  classId?: string;
+  onSuccess?: () => void;
 }
 
-export default function DeleteClassModal({ isOpen, onClose, className }: DeleteClassModalProps) {
+export default function DeleteClassModal({ 
+  isOpen, 
+  onClose, 
+  className, 
+  classId,
+  onSuccess 
+}: DeleteClassModalProps) {
+  const { user } = useAuth();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   if (!isOpen) return null;
+
+  const handleDelete = async () => {
+    if (!classId || !user?.id) return;
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      await deleteClass(classId, user.id);
+      onSuccess?.();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete class');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -28,18 +60,31 @@ export default function DeleteClassModal({ isOpen, onClose, className }: DeleteC
             </p>
         </div>
 
+        {error && (
+          <p className="text-red-500 text-sm">{error}</p>
+        )}
+
         <div className="flex gap-3 pt-4">
             <button 
                 onClick={onClose}
-                className="flex-1 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-50 transition-colors"
+                disabled={isDeleting}
+                className="flex-1 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
             >
                 Cancel
             </button>
             <button 
-                onClick={onClose} // In real app, this would delete
-                className="flex-1 py-2.5 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 py-2.5 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
             >
-                Delete Class
+                {isDeleting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete Class'
+                )}
             </button>
         </div>
 

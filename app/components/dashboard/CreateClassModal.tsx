@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, X, MapPin as MapPinIcon, RefreshCw, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, X, MapPin as MapPinIcon, RefreshCw, Clock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { createClass, updateClass } from '@/lib/api';
+import { useAuth } from '@/app/context/AuthContext';
 
 interface CreateClassModalProps {
     initialData?: {
@@ -14,10 +16,20 @@ interface CreateClassModalProps {
     };
     trigger?: React.ReactNode; 
     onClose?: () => void;
-    isOpenControlled?: boolean; // To control from outside if needed
+    isOpenControlled?: boolean;
+    classId?: string;
+    onSuccess?: () => void;
 }
 
-export default function CreateClassModal({ initialData, trigger, onClose, isOpenControlled }: CreateClassModalProps = {}) {
+export default function CreateClassModal({ 
+  initialData, 
+  trigger, 
+  onClose, 
+  isOpenControlled,
+  classId,
+  onSuccess 
+}: CreateClassModalProps = {}) {
+  const { user } = useAuth();
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   
   // Determine if controlled or uncontrolled
@@ -30,9 +42,11 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
   const isEditMode = !!initialData;
 
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [formData, setFormData] = useState({
       name: initialData?.name || '',
-      code: initialData?.code || 'ZS-AKD-2024',
+      description: '',
       location: initialData?.location || '',
       lat: '',
       lng: '',
@@ -40,34 +54,133 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
       startTime: initialData?.startTime || '',
       endTime: initialData?.endTime || ''
   });
-  const [errors, setErrors] = useState<{time?: string}>({});
+  const [errors, setErrors] = useState<{time?: string; submit?: string; location?: string}>({});
 
-  const handleCreate = () => {
+  // Get current location using browser geolocation API
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setErrors({ location: 'Geolocation is not supported by your browser' });
+      return;
+    }
+
+    setIsGettingLocation(true);
+    setErrors({});
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        
+        // Try to reverse geocode for a readable address
+        let locationName = `${lat}, ${lng}`;
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+          );
+          const data = await res.json();
+          if (data.display_name) {
+            locationName = data.display_name.split(',').slice(0, 3).join(',');
+          }
+        } catch (err) {
+          // Use coordinates if reverse geocoding fails
+        }
+
+        setFormData(prev => ({
+          ...prev,
+          location: locationName,
+          lat,
+          lng
+        }));
+        setIsGettingLocation(false);
+      },
+      (error) => {
+        setIsGettingLocation(false);
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setErrors({ location: 'Location permission denied' });
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setErrors({ location: 'Location unavailable' });
+            break;
+          case error.TIMEOUT:
+            setErrors({ location: 'Location request timed out' });
+            break;
+          default:
+            setErrors({ location: 'Unable to get location' });
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleCreate = async () => {
       // Basic Validation
+      if (!formData.name.trim()) {
+          setErrors({ submit: 'Class name is required' });
+          return;
+      }
+
       if (formData.startTime && formData.endTime && formData.endTime <= formData.startTime) {
           setErrors({ time: 'End time must be after start time' });
           return;
       }
 
-      // Simulate API call
-      setTimeout(() => {
+      if (!user?.id) {
+          setErrors({ submit: 'Please log in to create a class' });
+          return;
+      }
+
+      setIsSubmitting(true);
+      setErrors({});
+
+      try {
+          if (isEditMode && classId) {
+              await updateClass(classId, user.id, {
+                  name: formData.name,
+                  description: formData.description || undefined,
+                  location: formData.location || undefined,
+                  latitude: formData.lat || undefined,
+                  longitude: formData.lng || undefined,
+                  radius: formData.radius || 100,
+                  checkInStart: formData.startTime || undefined,
+                  checkInEnd: formData.endTime || undefined,
+              });
+          } else {
+              await createClass(user.id, formData.name, {
+                  description: formData.description || undefined,
+                  location: formData.location || undefined,
+                  latitude: formData.lat || undefined,
+                  longitude: formData.lng || undefined,
+                  radius: formData.radius || 100,
+                  checkInStart: formData.startTime || undefined,
+                  checkInEnd: formData.endTime || undefined,
+              });
+          }
+
           setShowSuccess(true);
+          onSuccess?.();
+          
           setTimeout(() => {
               setIsOpen(false);
               setShowSuccess(false);
               setErrors({});
+              // Reset form
+              setFormData({
+                  name: '',
+                  description: '',
+                  location: '',
+                  lat: '',
+                  lng: '',
+                  radius: 100,
+                  startTime: '',
+                  endTime: ''
+              });
           }, 1500);
-      }, 500);
-  };
-
-  const regenerateCode = () => {
-      // Mock code generation
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-      let result = '';
-      for ( let i = 0; i < 6; i++ ) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      } catch (err: any) {
+          setErrors({ submit: err.message || 'Failed to save class' });
+      } finally {
+          setIsSubmitting(false);
       }
-      setFormData({ ...formData, code: result });
   };
 
   return (
@@ -132,7 +245,7 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Class Name</label>
+                                <label className="block text-sm font-semibold text-gray-700">Class Name *</label>
                                 <input 
                                     type="text" 
                                     placeholder="e.g., Machine Learning"
@@ -142,31 +255,23 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Class Code</label>
-                                <div className="flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        readOnly
-                                        className="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-gray-500 cursor-not-allowed font-mono"
-                                        value={formData.code}
-                                    />
-                                    <button 
-                                        onClick={regenerateCode}
-                                        className="p-2.5 border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 hover:text-[#F43F5E] hover:border-[#F43F5E]/30 transition-colors"
-                                        title="Regenerate Code"
-                                    >
-                                        <RefreshCw size={20} />
-                                    </button>
-                                </div>
-                                <p className="text-xs text-gray-400">Auto-generated unique code for students to join.</p>
+                                <label className="block text-sm font-semibold text-gray-700">Description</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Brief description (optional)"
+                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none transition-all text-gray-900"
+                                    value={formData.description}
+                                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                                />
                             </div>
                         </div>
+                        <p className="text-xs text-gray-400">A unique class code will be auto-generated for students to join.</p>
                     </section>
-        
+    
                     {/* Section 2: Location & Radius */}
                     <section className="space-y-4">
                         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                            Location & Radius
+                            Location & Radius (Optional)
                             <div className="h-px bg-gray-100 flex-1"></div>
                         </h3>
                         
@@ -176,40 +281,62 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
                                 type="text" 
                                 placeholder="Search for a location..."
                                 className="w-full bg-white border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-gray-900"
+                                value={formData.location}
+                                onChange={(e) => setFormData({...formData, location: e.target.value})}
                             />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label className="block text-xs font-medium text-gray-500">Latitude</label>
-                                <input 
-                                    type="text" 
-                                    placeholder="-" 
-                                    readOnly 
-                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-gray-400 text-sm"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="block text-xs font-medium text-gray-500">Longitude</label>
-                                <input 
-                                    type="text" 
-                                    placeholder="-" 
-                                    readOnly 
-                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-gray-400 text-sm"
-                                />
-                            </div>
-                        </div>
-
                         <div className="flex gap-4">
-                            <button className="flex-1 py-2.5 border border-[#F43F5E] text-[#F43F5E] rounded-lg hover:bg-[#FFF0F3] text-sm font-bold transition-colors flex items-center justify-center gap-2">
-                                <MapPinIcon size={16} />
-                                Use Current Location
-                            </button>
-                            <button className="flex-1 py-2.5 border border-[#F43F5E] text-[#F43F5E] rounded-lg hover:bg-[#FFF0F3] text-sm font-bold transition-colors flex items-center justify-center gap-2">
-                                <MapPinIcon size={16} />
-                                Choose from Map
+                            <button 
+                                type="button"
+                                onClick={handleGetCurrentLocation}
+                                disabled={isGettingLocation}
+                                className="flex-1 py-2.5 border border-[#F43F5E] text-[#F43F5E] rounded-lg hover:bg-[#FFF0F3] text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                {isGettingLocation ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        Getting Location...
+                                    </>
+                                ) : (
+                                    <>
+                                        <MapPinIcon size={16} />
+                                        Use Current Location
+                                    </>
+                                )}
                             </button>
                         </div>
+                        {errors.location && (
+                            <div className="flex items-center gap-2 text-red-500 text-xs font-medium">
+                                <AlertCircle size={14} />
+                                {errors.location}
+                            </div>
+                        )}
+
+                        {/* Latitude & Longitude Fields */}
+                        <div className="grid grid-cols-2 gap-4 pt-2">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-semibold text-gray-700">Latitude</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="e.g., -6.2088"
+                                    value={formData.lat}
+                                    onChange={(e) => setFormData({...formData, lat: e.target.value})}
+                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-gray-900"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-semibold text-gray-700">Longitude</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="e.g., 106.8456"
+                                    value={formData.lng}
+                                    onChange={(e) => setFormData({...formData, lng: e.target.value})}
+                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-gray-900"
+                                />
+                            </div>
+                        </div>
+                        <p className="text-xs text-gray-400">Auto-filled when using current location, or enter manually from Google Maps.</p>
 
                         <div className="space-y-2 pt-2">
                             <label className="block text-sm font-semibold text-gray-700">Check-in Radius (meters)</label>
@@ -228,7 +355,7 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
                     {/* Section 3: Schedule */}
                     <section className="space-y-4">
                         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                            Check-in Window
+                            Check-in Window (Optional)
                             <div className="h-px bg-gray-100 flex-1"></div>
                         </h3>
                         
@@ -240,6 +367,7 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
                                     <input 
                                         type="time" 
                                         className="w-full bg-white border border-gray-200 rounded-lg p-2.5 pl-10 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-sm text-gray-900"
+                                        value={formData.startTime}
                                         onChange={(e) => setFormData({...formData, startTime: e.target.value})}
                                     />
                                 </div>
@@ -251,6 +379,7 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
                                     <input 
                                         type="time" 
                                         className={`w-full bg-white border rounded-lg p-2.5 pl-10 focus:ring-2 outline-none text-sm text-gray-900 ${errors.time ? 'border-red-300 ring-red-100' : 'border-gray-200 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E]'}`}
+                                        value={formData.endTime}
                                         onChange={(e) => setFormData({...formData, endTime: e.target.value})}
                                     />
                                 </div>
@@ -264,21 +393,38 @@ export default function CreateClassModal({ initialData, trigger, onClose, isOpen
                         )}
                     </section>
 
+                    {/* Error Message */}
+                    {errors.submit && (
+                        <div className="flex items-center gap-2 text-red-500 text-sm font-medium bg-red-50 p-3 rounded-lg">
+                            <AlertCircle size={16} />
+                            {errors.submit}
+                        </div>
+                    )}
+
                 </div>
 
                 {/* Footer */}
                 <div className="p-6 border-t border-gray-100 flex gap-4 bg-gray-50/50">
                     <button 
                         onClick={() => setIsOpen(false)} 
-                        className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                        disabled={isSubmitting}
+                        className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50"
                     >
                         Cancel
                     </button>
                     <button 
                         onClick={handleCreate}
-                        className="flex-1 py-3 bg-[#F43F5E] text-white font-bold rounded-xl hover:bg-[#E11D48] transition-all shadow-md hover:shadow-lg"
+                        disabled={isSubmitting}
+                        className="flex-1 py-3 bg-[#F43F5E] text-white font-bold rounded-xl hover:bg-[#E11D48] transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                     >
-                        {isEditMode ? 'Update Class' : 'Create Class'}
+                        {isSubmitting ? (
+                            <>
+                                <Loader2 size={18} className="animate-spin" />
+                                {isEditMode ? 'Updating...' : 'Creating...'}
+                            </>
+                        ) : (
+                            isEditMode ? 'Update Class' : 'Create Class'
+                        )}
                     </button>
                 </div>
                 </>

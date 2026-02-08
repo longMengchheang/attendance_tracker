@@ -6,10 +6,10 @@ interface Student {
   id: string;
   name: string;
   email: string;
-  batch: string;
-  status: string;
-  enrolledClasses: string[];
-  attendance: {
+  enrolledAt?: string;
+  status?: string;
+  enrolledClasses?: string[];
+  attendance?: {
     present: number;
     absent: number;
     late: number;
@@ -58,13 +58,9 @@ export default function StudentSummaryModal({ isOpen, onClose, student }: Studen
                      <p className="text-gray-900 font-medium truncate" title={student.email}>{student.email}</p>
                 </div>
                  <div>
-                     <p className="text-gray-500 text-xs uppercase tracking-wider font-semibold mb-1">Batch</p>
-                     <p className="text-gray-900 font-medium">{student.batch}</p>
-                </div>
-                 <div>
                      <p className="text-gray-500 text-xs uppercase tracking-wider font-semibold mb-1">Status</p>
                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        {student.status}
+                        {student.status || 'Enrolled'}
                      </span>
                 </div>
             </div>
@@ -75,11 +71,11 @@ export default function StudentSummaryModal({ isOpen, onClose, student }: Studen
             <div>
                 <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
                     Enrolled Classes
-                    <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{student.enrolledClasses.length}</span>
+                    <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{student.enrolledClasses?.length ?? 0}</span>
                 </h3>
                 <div className="flex flex-wrap gap-2">
-                    {student.enrolledClasses.length > 0 ? (
-                        student.enrolledClasses.map((cls, idx) => (
+                    {(student.enrolledClasses?.length ?? 0) > 0 ? (
+                        student.enrolledClasses?.map((cls, idx) => (
                             <span 
                                 key={idx} 
                                 className="px-3 py-1.5 rounded-lg border border-[#F43F5E]/20 bg-[#F43F5E]/5 text-[#F43F5E] text-xs font-medium"
@@ -101,17 +97,17 @@ export default function StudentSummaryModal({ isOpen, onClose, student }: Studen
                 <div className="grid grid-cols-3 gap-4">
                     <div className="bg-green-50 rounded-lg p-3 border border-green-100 text-center">
                         <CheckCircle2 size={20} className="text-green-600 mx-auto mb-1" />
-                        <p className="text-xl font-bold text-green-700">{student.attendance.present}</p>
+                        <p className="text-xl font-bold text-green-700">{student.attendance?.present ?? '--'}</p>
                         <p className="text-xs text-green-600 font-medium">Present</p>
                     </div>
                     <div className="bg-red-50 rounded-lg p-3 border border-red-100 text-center">
                         <XCircle size={20} className="text-red-500 mx-auto mb-1" />
-                        <p className="text-xl font-bold text-red-600">{student.attendance.absent}</p>
+                        <p className="text-xl font-bold text-red-600">{student.attendance?.absent ?? '--'}</p>
                         <p className="text-xs text-red-500 font-medium">Absent</p>
                     </div>
                     <div className="bg-orange-50 rounded-lg p-3 border border-orange-100 text-center">
                         <Clock size={20} className="text-orange-500 mx-auto mb-1" />
-                        <p className="text-xl font-bold text-orange-600">{student.attendance.late}</p>
+                        <p className="text-xl font-bold text-orange-600">{student.attendance?.late ?? '--'}</p>
                         <p className="text-xs text-orange-500 font-medium">Late</p>
                     </div>
                 </div>

@@ -5,12 +5,15 @@ import { X, MapPin, Clock, Users, Calendar, Filter, ChevronDown, CheckCircle2, X
 import { useAuth } from '@/app/context/AuthContext';
 
 interface ClassData {
-  id: number;
+  id: string | number;
   name: string;
   code: string;
-  location: string;
-  radius: string;
-  students: number;
+  location?: string | null;
+  latitude?: string | null;
+  longitude?: string | null;
+  radius?: string | number | null;
+  students?: number;
+  description?: string | null;
 }
 
 interface ClassDetailsModalProps {
@@ -59,7 +62,7 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                     <span className="text-gray-400 text-sm">|</span>
                     <span className="text-gray-500 text-sm flex items-center gap-1">
                         <Users size={14} />
-                        {classData.students} Students Enrolled
+                        {classData.students ?? '--'} Students Enrolled
                     </span>
                 </div>
             </div>
@@ -92,15 +95,36 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
             {activeTab === 'Overview' && (
                 <div className="space-y-6 max-w-2xl">
                     <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+                        {/* Description Section */}
+                        {classData.description && (
+                            <>
+                                <div className="flex items-start gap-4">
+                                    <div className={`w-10 h-10 ${primaryBg} rounded-lg flex items-center justify-center ${primaryText} shrink-0`}>
+                                        <Calendar size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-gray-900">Description</h3>
+                                        <p className="text-gray-600 mt-1 text-sm leading-relaxed">{classData.description}</p>
+                                    </div>
+                                </div>
+                                <div className="h-px bg-gray-50 w-full"></div>
+                            </>
+                        )}
+                        
                         <div className="flex items-start gap-4">
                             <div className={`w-10 h-10 ${primaryBg} rounded-lg flex items-center justify-center ${primaryText} shrink-0`}>
                                 <MapPin size={20} />
                             </div>
                             <div>
                                 <h3 className="font-bold text-gray-900">Location Details</h3>
-                                <p className="text-gray-600 mt-1 text-sm leading-relaxed">{classData.location}</p>
+                                <p className="text-gray-600 mt-1 text-sm leading-relaxed">{classData.location || 'Location not set'}</p>
+                                {classData.latitude && classData.longitude && (
+                                    <p className="text-gray-400 text-xs mt-1">
+                                        Coordinates: {classData.latitude}, {classData.longitude}
+                                    </p>
+                                )}
                                 <div className="mt-3 inline-flex items-center gap-2 text-xs font-mono bg-gray-50 text-gray-500 px-2 py-1 rounded border border-gray-100">
-                                    <span className="font-bold">Radius:</span> {classData.radius}
+                                    <span className="font-bold">Radius:</span> {classData.radius || '100'}m
                                 </div>
                             </div>
                         </div>
@@ -108,7 +132,7 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                         <div className="h-px bg-gray-50 w-full"></div>
 
                         <div className="flex items-start gap-4">
-                             <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-500 shrink-0">
+                             <div className={`w-10 h-10 ${primaryBg} rounded-lg flex items-center justify-center ${primaryText} shrink-0`}>
                                 <Clock size={20} />
                             </div>
                             <div>

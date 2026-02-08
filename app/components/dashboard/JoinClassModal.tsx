@@ -1,15 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, X, CheckCircle2, AlertCircle, BookOpen } from 'lucide-react';
+import { Plus, X, CheckCircle2, AlertCircle, BookOpen, Loader2 } from 'lucide-react';
+import { joinClass } from '@/lib/api';
+import { useAuth } from '@/app/context/AuthContext';
 
 interface JoinClassModalProps {
     trigger?: React.ReactNode;
     onClose?: () => void;
     isOpenControlled?: boolean;
+    onSuccess?: () => void;
 }
 
-export default function JoinClassModal({ trigger, onClose, isOpenControlled }: JoinClassModalProps = {}) {
+export default function JoinClassModal({ 
+  trigger, 
+  onClose, 
+  isOpenControlled,
+  onSuccess 
+}: JoinClassModalProps = {}) {
+  const { user } = useAuth();
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   
   const isOpen = isOpenControlled !== undefined ? isOpenControlled : internalIsOpen;
@@ -20,9 +29,10 @@ export default function JoinClassModal({ trigger, onClose, isOpenControlled }: J
 
   const [classCode, setClassCode] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState('');
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
       if (!classCode.trim()) {
           setError('Please enter a class code');
           return;
@@ -33,16 +43,29 @@ export default function JoinClassModal({ trigger, onClose, isOpenControlled }: J
           return;
       }
 
-      // Simulate API call
+      if (!user?.id) {
+          setError('Please log in to join a class');
+          return;
+      }
+
+      setIsJoining(true);
       setError('');
-      setTimeout(() => {
+
+      try {
+          await joinClass(user.id, classCode);
           setShowSuccess(true);
+          onSuccess?.();
+          
           setTimeout(() => {
               setIsOpen(false);
               setShowSuccess(false);
               setClassCode('');
           }, 1500);
-      }, 500);
+      } catch (err: any) {
+          setError(err.message || 'Failed to join class');
+      } finally {
+          setIsJoining(false);
+      }
   };
 
   const handleClose = () => {
@@ -132,15 +155,24 @@ export default function JoinClassModal({ trigger, onClose, isOpenControlled }: J
                 <div className="p-6 border-t border-gray-100 flex gap-4 bg-gray-50/50">
                     <button 
                         onClick={handleClose} 
-                        className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                        disabled={isJoining}
+                        className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50"
                     >
                         Cancel
                     </button>
                     <button 
                         onClick={handleJoin}
-                        className="flex-1 py-3 bg-[#3B82F6] text-white font-bold rounded-xl hover:bg-[#2563EB] transition-all shadow-md hover:shadow-lg"
+                        disabled={isJoining}
+                        className="flex-1 py-3 bg-[#3B82F6] text-white font-bold rounded-xl hover:bg-[#2563EB] transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                     >
-                        Join Class
+                        {isJoining ? (
+                            <>
+                                <Loader2 size={18} className="animate-spin" />
+                                Joining...
+                            </>
+                        ) : (
+                            'Join Class'
+                        )}
                     </button>
                 </div>
                 </>

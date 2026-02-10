@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function POST(request: Request) {
   try {
@@ -20,14 +21,70 @@ export async function POST(request: Request) {
       );
     }
 
-    // Sign up with Supabase Auth
-    const { data, error } = await supabase.auth.signUp({
+    // =========================================================================
+    // DUMMY SIGNUP (FOR TESTING) - USES ADMIN API TO GENERATE LINK & LOG OTP
+    // =========================================================================
+    
+    /* 
+       NOTES:
+       - This block uses `supabaseAdmin.auth.admin.generateLink` to bypass email sending.
+       - It logs the OTP to the terminal console.
+       - DELETE or COMMENT OUT this block when moving to production.
+    */
+    
+    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'signup',
       email,
-      password, // Use provided password
+      password,
       options: {
         data: {
           name,
           role,
+        },
+      },
+    });
+
+    if (error) {
+       console.error('Error generating link:', error);
+       if (error.message.includes('already registered')) {
+        return NextResponse.json(
+          { error: 'Email already exists' },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      );
+    }
+
+    // Log the OTP to the console
+    console.log('GenerateLink Response Data:', JSON.stringify(data, null, 2));
+
+    if (data.properties?.email_otp) {
+        console.log('\n================================================================');
+        console.log(`🔐 DUMMY VERIFICATION CODE FOR ${email}: ${data.properties.email_otp}`);
+        console.log('================================================================\n');
+    } else {
+        console.log('No OTP returned in generateLink response. Properties:', data.properties);
+    }
+    
+    // =========================================================================
+    // END DUMMY SIGNUP
+    // =========================================================================
+
+
+    // =========================================================================
+    // PRODUCTION SIGNUP (UNCOMMENT WHEN READY FOR PRODUCTION)
+    // =========================================================================
+    /*
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name,
+          role, // ensure 'role' is passed if you rely on it in triggers/metadata
         },
       },
     });
@@ -44,21 +101,14 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    */
+    // =========================================================================
+    // END PRODUCTION SIGNUP
+    // =========================================================================
 
-    // Create profile in users table
-    if (data.user) {
-      const { error: profileError } = await supabase
-        .from('users')
-        .insert({
-          id: data.user.id,
-          name,
-          role,
-        });
-
-      if (profileError) {
-        console.error('Profile creation error:', profileError);
-      }
-    }
+    // Create profile in users table - MOVED to verify-otp
+    // We now only create the user record after email verification
+    // if (data.user) { ... }
 
     return NextResponse.json({
       message: 'Registration successful. Please check your email to verify your account.',

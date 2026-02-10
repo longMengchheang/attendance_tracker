@@ -39,8 +39,8 @@ export default function SignupPage() {
     const result = await signup(formData.name, formData.email, formData.password, role);
     
     if (result.success) {
-      // Redirect to login page after successful registration
-      router.push('/login');
+      // Redirect to verify email page
+      router.push(`/verify-email?email=${encodeURIComponent(formData.email)}&type=email`);
     } else {
       setError(result.error || 'Registration failed');
     }

@@ -9,14 +9,14 @@ export interface Class {
   name: string;
   description: string | null;
   code: string;
-  teacherId: string;
-  createdAt: string;
+  teacher_id: string;
+  created_at: string;
   location?: string | null;
   latitude?: string | null;
   longitude?: string | null;
   radius?: number | null;
-  checkInStart?: string | null;
-  checkInEnd?: string | null;
+  check_in_start?: string | null;
+  check_in_end?: string | null;
 }
 
 export interface Enrollment {

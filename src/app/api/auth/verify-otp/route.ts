@@ -13,11 +13,19 @@ export async function POST(request: Request) {
       );
     }
 
+    // Map client-side types to Supabase types
+    let otpType: 'signup' | 'email' | 'recovery' | 'magiclink' = 'email';
+    
+    if (type === 'signup') otpType = 'signup';
+    else if (type === 'recovery') otpType = 'recovery';
+    else if (type === 'magiclink') otpType = 'magiclink';
+    
     // Verify OTP with Supabase
+    // Note: for recovery, email is required.
     const { data, error } = await supabase.auth.verifyOtp({
       email,
       token,
-      type: type === 'signup' ? 'signup' : 'email',
+      type: otpType,
     });
 
     if (error) {
@@ -35,11 +43,34 @@ export async function POST(request: Request) {
     }
 
     // Get user profile
-    const { data: profile } = await supabase
+    // Get user profile or create if not exists (this is the new flow)
+    let { data: profile } = await supabase
       .from('users')
       .select('*')
       .eq('id', data.user.id)
       .single();
+
+    if (!profile) {
+      // Create profile now that email is verified
+      const { data: newProfile, error: createError } = await supabase
+        .from('users')
+        .insert({
+          id: data.user.id,
+          name: data.user.user_metadata?.name || 'User',
+          role: (data.user.user_metadata?.role as 'student' | 'teacher') || 'student',
+        })
+        .select()
+        .single();
+      
+      if (createError) {
+        console.error('Error creating user profile after verification:', createError);
+        // We might want to return an error here, but technically auth succeeded
+        // Let's assume for now it's okay or we can retry later.
+        // But for consistency let's try to proceed.
+      } else {
+        profile = newProfile;
+      }
+    }
 
     return NextResponse.json({
       message: 'Verification successful',

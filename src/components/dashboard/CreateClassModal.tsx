@@ -9,10 +9,13 @@ interface CreateClassModalProps {
     initialData?: {
         name: string;
         code: string;
-        location: string;
-        radius: number | string;
-        startTime?: string;
-        endTime?: string;
+        location?: string | null;
+        radius?: number | string | null;
+        startTime?: string | null;
+        endTime?: string | null;
+        description?: string | null;
+        latitude?: string | null;
+        longitude?: string | null;
     };
     trigger?: React.ReactNode; 
     onClose?: () => void;
@@ -44,15 +47,26 @@ export default function CreateClassModal({
   const [showSuccess, setShowSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  // Helper to get local HH:MM from ISO string
+  const getLocalTime = (isoString?: string | null) => {
+    if (!isoString) return '';
+    // Ensure we treat the string as UTC if it lacks timezone info (Supabase timestamp vs timestamptz)
+    const timeValue = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
+    const date = new Date(timeValue);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
   const [formData, setFormData] = useState({
       name: initialData?.name || '',
-      description: '',
+      description: initialData?.description || '',
       location: initialData?.location || '',
-      lat: '',
-      lng: '',
+      lat: initialData?.latitude || '',
+      lng: initialData?.longitude || '',
       radius: initialData?.radius ? Number(initialData.radius) : 100,
-      startTime: initialData?.startTime || '',
-      endTime: initialData?.endTime || ''
+      startTime: getLocalTime(initialData?.startTime),
+      endTime: getLocalTime(initialData?.endTime)
   });
   const [errors, setErrors] = useState<{time?: string; submit?: string; location?: string}>({});
 
@@ -113,6 +127,18 @@ export default function CreateClassModal({
     );
   };
 
+  // Helper to convert local HH:MM to ISO string (using today's date)
+  const toIsoString = (timeStr: string) => {
+    if (!timeStr) return undefined;
+    const date = new Date();
+    const [hours, minutes] = timeStr.split(':');
+    date.setHours(parseInt(hours, 10));
+    date.setMinutes(parseInt(minutes, 10));
+    date.setSeconds(0);
+    date.setMilliseconds(0);
+    return date.toISOString();
+  };
+
   const handleCreate = async () => {
       // Basic Validation
       if (!formData.name.trim()) {
@@ -142,8 +168,8 @@ export default function CreateClassModal({
                   latitude: formData.lat || undefined,
                   longitude: formData.lng || undefined,
                   radius: formData.radius || 100,
-                  checkInStart: formData.startTime || undefined,
-                  checkInEnd: formData.endTime || undefined,
+                  checkInStart: toIsoString(formData.startTime),
+                  checkInEnd: toIsoString(formData.endTime),
               });
           } else {
               await createClass(user.id, formData.name, {
@@ -152,8 +178,8 @@ export default function CreateClassModal({
                   latitude: formData.lat || undefined,
                   longitude: formData.lng || undefined,
                   radius: formData.radius || 100,
-                  checkInStart: formData.startTime || undefined,
-                  checkInEnd: formData.endTime || undefined,
+                  checkInStart: toIsoString(formData.startTime),
+                  checkInEnd: toIsoString(formData.endTime),
               });
           }
 

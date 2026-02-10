@@ -59,7 +59,7 @@ export default function StudentPage() {
     const matchesSearch = 
       student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       student.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchQuery.toLowerCase());
+      (student.email || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     return matchesSearch;
   });

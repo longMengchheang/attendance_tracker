@@ -12,9 +12,8 @@ function generateClassCode(): string {
   return code;
 }
 
-/**
- * Create a new class
- */
+// ... (removed toTimestamp) ...
+
 export async function createClass(data: {
   name: string;
   description?: string;
@@ -112,13 +111,44 @@ export async function updateClass(id: string, updates: Partial<Class>): Promise<
 /**
  * Delete a class
  */
+/**
+ * Delete a class
+ */
 export async function deleteClass(id: string): Promise<boolean> {
+  // First delete associated attendance records
+  const { error: attendanceError } = await supabase
+    .from('attendance')
+    .delete()
+    .eq('class_id', id);
+
+  if (attendanceError) {
+    console.error('Error deleting attendance records:', attendanceError);
+    return false;
+  }
+
+  // Then delete associated enrollments
+  const { error: enrollmentError } = await supabase
+    .from('enrollments')
+    .delete()
+    .eq('class_id', id);
+
+  if (enrollmentError) {
+    console.error('Error deleting enrollments:', enrollmentError);
+    return false;
+  }
+
+  // Finally delete the class
   const { error } = await supabase
     .from('classes')
     .delete()
     .eq('id', id);
 
-  return !error;
+  if (error) {
+    console.error('Error deleting class:', error);
+    return false;
+  }
+
+  return true;
 }
 
 /**

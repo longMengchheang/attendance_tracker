@@ -41,9 +41,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm mx-auto md:mx-0">
         
         <div className="text-center md:text-left mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-[#F43F5E]/20 to-[#F43F5E]/5 rounded-2xl flex items-center justify-center mx-auto md:mx-0 mb-4">
-            <Mail className="w-8 h-8 text-[#F43F5E]" />
-          </div>
+
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Welcome Back</h1>
           <p className="text-gray-500 mt-2 text-sm">Enter your credentials to sign in</p>
         </div>

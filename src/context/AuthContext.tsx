@@ -183,25 +183,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Update Password - sets new password for authenticated user
   const updatePassword = async (password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      // Get current session token
-      const sessionString = localStorage.getItem(SESSION_KEY);
-      const session = sessionString ? JSON.parse(sessionString) : null;
-      const accessToken = session?.access_token;
-
-      if (!accessToken) {
-         return { success: false, error: 'Not authenticated. Please try clicking the reset link again.' };
-      }
-
-      const res = await fetch('/api/auth/update-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, accessToken }),
+      const { error } = await supabase.auth.updateUser({
+        password: password
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Failed to update password' };
+      if (error) {
+        return { success: false, error: error.message };
       }
 
       return { success: true };
@@ -218,21 +205,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         otpType = 'signup';
       }
 
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: code,
-        type: otpType,
+      const res = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, token: code, type: otpType }),
       });
 
-      if (error) {
-        return { success: false, error: error.message };
+      const data = await res.json();
+
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Verification failed' };
       }
 
       if (data.session && data.user) {
          const loggedInUser: Users = {
             id: data.user.id,
-            name: data.user.user_metadata?.name || 'User',
-            role: (data.user.user_metadata?.role as 'student' | 'teacher') || 'student',
+            name: data.user.name || 'User',
+            role: (data.user.role as 'student' | 'teacher') || 'student',
             created_at: new Date().toISOString(),
          };
          setUser(loggedInUser);
@@ -240,7 +229,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          setSession(data.session);
          
          // Also set supabase session client-side to ensure consistency
-         await supabase.auth.setSession(data.session);
+         // Note: we might need to be careful here if access_token format matches what setSession expects
+         // The API returns session matching Supabase session shape usually.
+         await supabase.auth.setSession({
+            access_token: data.session.accessToken,
+            refresh_token: data.session.refreshToken,
+         });
       }
 
       return { success: true };

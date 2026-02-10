@@ -36,8 +36,8 @@ export default function VerifyEmailPage() {
       return;
     }
 
-    if (code.length !== 6) {
-      setError('Please enter a valid 6-digit code.');
+    if (code.length < 6 || code.length > 8) {
+      setError('Please enter a valid verification code.');
       return;
     }
 
@@ -88,7 +88,7 @@ export default function VerifyEmailPage() {
           </div>
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Check Your Email</h1>
           <p className="text-gray-500 mt-2 text-sm leading-relaxed">
-            We sent a 6-digit code to <span className="font-semibold text-gray-700">{email || 'your email'}</span>
+            We sent a verification code to <span className="font-semibold text-gray-700">{email || 'your email'}</span>
           </p>
         </div>
 
@@ -111,10 +111,10 @@ export default function VerifyEmailPage() {
             <input
               type="text"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-full border border-gray-200 rounded-xl p-4 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none transition-all shadow-inner text-gray-900 text-center text-2xl tracking-[0.5em] font-mono"
-              placeholder="000000"
-              maxLength={6}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+              className="w-full border border-gray-200 rounded-xl p-4 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none transition-all shadow-inner text-gray-900 text-center text-lg tracking-widest font-mono"
+              placeholder="Enter Code"
+              maxLength={8}
               autoFocus
             />
           </div>

@@ -241,8 +241,13 @@ export default function DashboardPage() {
             initialData={{
                 name: selectedClass.name,
                 code: selectedClass.code,
-                location: '',
-                radius: 100,
+                location: selectedClass.location,
+                radius: selectedClass.radius || 100,
+                description: selectedClass.description,
+                latitude: selectedClass.latitude,
+                longitude: selectedClass.longitude,
+                startTime: selectedClass.check_in_start,
+                endTime: selectedClass.check_in_end,
             }}
             classId={selectedClass.id}
             onSuccess={loadClasses}

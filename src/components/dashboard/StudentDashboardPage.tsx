@@ -183,6 +183,8 @@ export default function StudentDashboardPage() {
           longitude: selectedClass.longitude,
           radius: selectedClass.radius,
           students: selectedClass.studentCount,
+          check_in_start: selectedClass.checkInStart,
+          check_in_end: selectedClass.checkInEnd,
         } : null} 
       />
     </div>

@@ -14,7 +14,25 @@ interface ClassData {
   radius?: string | number | null;
   students?: number;
   description?: string | null;
+  check_in_start?: string | null;
+  check_in_end?: string | null;
 }
+
+// Helper to format ISO time to HH:MM AM/PM
+const formatTime = (isoString?: string | null) => {
+    if (!isoString) return '--:--';
+    try {
+        // Append Z if missing to ensure UTC parsing
+        const timeValue = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
+        return new Date(timeValue).toLocaleTimeString([], { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+        });
+    } catch (e) {
+        return '--:--';
+    }
+};
 
 interface ClassDetailsModalProps {
   isOpen: boolean;
@@ -137,8 +155,14 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                             </div>
                             <div>
                                 <h3 className="font-bold text-gray-900">Schedule</h3>
-                                <p className="text-gray-600 mt-1 text-sm">8:00 AM – 10:00 AM</p>
-                                <p className="text-gray-400 text-xs mt-1">Check-in allowed 15 mins prior</p>
+                                {classData.check_in_start && classData.check_in_end ? (
+                                    <p className="text-gray-600 mt-1 text-sm">
+                                        {formatTime(classData.check_in_start)} – {formatTime(classData.check_in_end)}
+                                    </p>
+                                ) : (
+                                    <p className="text-gray-500 mt-1 text-sm italic">No schedule set</p>
+                                )}
+                                <p className="text-gray-400 text-xs mt-1">Check-in allowed during this window</p>
                             </div>
                         </div>
                     </div>

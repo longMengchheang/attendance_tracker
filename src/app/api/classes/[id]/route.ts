@@ -32,7 +32,17 @@ export async function GET(request: Request, { params }: RouteParams) {
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const { teacherId, name, description } = await request.json();
+    const { 
+      teacherId, 
+      name, 
+      description,
+      location,
+      latitude,
+      longitude,
+      radius,
+      checkInStart,
+      checkInEnd
+    } = await request.json();
 
     if (!teacherId) {
       return NextResponse.json(
@@ -50,7 +60,18 @@ export async function PUT(request: Request, { params }: RouteParams) {
       );
     }
 
-    const updatedClass = await updateClass(id, { name, description });
+    // specific updates with converting camelCase to snake_case
+    const updates: any = {};
+    if (name) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (location !== undefined) updates.location = location;
+    if (latitude !== undefined) updates.latitude = latitude;
+    if (longitude !== undefined) updates.longitude = longitude;
+    if (radius !== undefined) updates.radius = radius;
+    if (checkInStart !== undefined) updates.check_in_start = checkInStart;
+    if (checkInEnd !== undefined) updates.check_in_end = checkInEnd;
+
+    const updatedClass = await updateClass(id, updates);
 
     if (!updatedClass) {
       return NextResponse.json(

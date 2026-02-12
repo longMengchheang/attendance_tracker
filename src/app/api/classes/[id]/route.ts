@@ -19,7 +19,10 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
 
     return NextResponse.json({ class: classData });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error fetching class:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -84,7 +87,10 @@ export async function PUT(request: Request, { params }: RouteParams) {
       message: 'Class updated successfully',
       class: updatedClass,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error updating class:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -128,7 +134,10 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     return NextResponse.json({
       message: 'Class deleted successfully',
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error deleting class:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

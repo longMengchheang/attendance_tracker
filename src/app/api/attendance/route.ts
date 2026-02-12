@@ -11,7 +11,10 @@ export async function GET(request: Request) {
 
     const records = await getAttendanceRecords({ studentId, classId, date });
     return NextResponse.json({ records });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error fetching attendance records:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

@@ -31,7 +31,10 @@ export async function GET(request: Request, { params }: RouteParams) {
     const students = await getClassStudents(id);
 
     return NextResponse.json({ students });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error fetching students:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

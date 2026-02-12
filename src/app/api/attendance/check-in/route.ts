@@ -39,6 +39,9 @@ export async function POST(request: Request) {
       alreadyCheckedIn: false,
     });
   } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error checking in:', error);
 
     if (error.message === 'Already checked in and out for this class today') {

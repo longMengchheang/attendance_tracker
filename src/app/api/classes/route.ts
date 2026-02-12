@@ -29,7 +29,10 @@ export async function GET(request: Request) {
 
     const classesData = await getTeacherClasses(teacherId);
     return NextResponse.json({ classes: classesData });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error fetching classes:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -84,7 +87,10 @@ export async function POST(request: Request) {
       { message: 'Class created successfully', class: newClass },
       { status: 201 }
     );
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error creating class:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

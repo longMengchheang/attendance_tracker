@@ -21,6 +21,9 @@ export async function POST(request: Request) {
       class: result.class,
     });
   } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error joining class:', error);
 
     if (error.message === 'Class not found') {

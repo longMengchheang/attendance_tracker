@@ -39,7 +39,10 @@ export async function GET(request: Request) {
     }));
 
     return NextResponse.json({ enrollments: formattedEnrollments });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error fetching enrollments:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

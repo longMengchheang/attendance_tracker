@@ -32,30 +32,51 @@ export async function POST(request: Request) {
        - DELETE or COMMENT OUT this block when moving to production.
     */
     
-    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'signup',
+    // =========================================================================
+    // DUMMY SIGNUP (FOR TESTING) - USES ADMIN API TO GENERATE LINK & LOG OTP
+    // =========================================================================
+    
+    /* 
+       NOTES:
+       - We first try to CREATE the user to ensure email uniqueness.
+       - Then we generate the link/OTP.
+    */
+
+    // Step 1: Attempt to create user (will fail if email exists)
+    const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: {
-          name,
-          role,
-        },
-      },
+      email_confirm: false, // Don't confirm yet, let them use OTP
+      user_metadata: { name, role }
     });
 
-    if (error) {
-       console.error('Error generating link:', error);
-       if (error.message.includes('already registered')) {
+    if (createError) {
+      console.error('Error creating user:', createError);
+      if (createError.message.includes('already registered') || createError.message.includes('unique constraint')) {
         return NextResponse.json(
           { error: 'Email already exists' },
           { status: 409 }
         );
       }
       return NextResponse.json(
-        { error: error.message },
+        { error: createError.message },
         { status: 400 }
       );
+    }
+
+    // Step 2: Generate Link (now that user exists)
+    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'signup',
+      email,
+      password,
+    });
+
+    if (error) {
+       console.error('Error generating link:', error);
+       return NextResponse.json(
+         { error: error.message },
+         { status: 400 }
+       );
     }
 
     // Log the OTP to the console

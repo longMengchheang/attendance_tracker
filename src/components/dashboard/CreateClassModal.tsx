@@ -2,8 +2,14 @@
 
 import { useState } from 'react';
 import { Plus, X, MapPin as MapPinIcon, RefreshCw, Clock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { createClass, updateClass } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+
+const LocationPicker = dynamic(() => import('../ui/LocationPicker'), {
+  ssr: false,
+  loading: () => <div className="h-64 w-full bg-gray-100 animate-pulse rounded-xl" />
+});
 
 interface CreateClassModalProps {
     initialData?: {
@@ -70,62 +76,7 @@ export default function CreateClassModal({
   });
   const [errors, setErrors] = useState<{time?: string; submit?: string; location?: string}>({});
 
-  // Get current location using browser geolocation API
-  const handleGetCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setErrors({ location: 'Geolocation is not supported by your browser' });
-      return;
-    }
 
-    setIsGettingLocation(true);
-    setErrors({});
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const lat = position.coords.latitude.toFixed(6);
-        const lng = position.coords.longitude.toFixed(6);
-        
-        // Try to reverse geocode for a readable address
-        let locationName = `${lat}, ${lng}`;
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
-          );
-          const data = await res.json();
-          if (data.display_name) {
-            locationName = data.display_name.split(',').slice(0, 3).join(',');
-          }
-        } catch (err) {
-          // Use coordinates if reverse geocoding fails
-        }
-
-        setFormData(prev => ({
-          ...prev,
-          location: locationName,
-          lat,
-          lng
-        }));
-        setIsGettingLocation(false);
-      },
-      (error) => {
-        setIsGettingLocation(false);
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            setErrors({ location: 'Location permission denied' });
-            break;
-          case error.POSITION_UNAVAILABLE:
-            setErrors({ location: 'Location unavailable' });
-            break;
-          case error.TIMEOUT:
-            setErrors({ location: 'Location request timed out' });
-            break;
-          default:
-            setErrors({ location: 'Unable to get location' });
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
 
   // Helper to convert local HH:MM to ISO string (using today's date)
   const toIsoString = (timeStr: string) => {
@@ -303,66 +254,24 @@ export default function CreateClassModal({
                         
                         <div className="space-y-2">
                             <label className="block text-sm font-semibold text-gray-700">Class Location</label>
-                            <input 
-                                type="text" 
-                                placeholder="Search for a location..."
-                                className="w-full bg-white border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-gray-900"
-                                value={formData.location}
-                                onChange={(e) => setFormData({...formData, location: e.target.value})}
+                            
+                            <LocationPicker 
+                                value={{
+                                    name: formData.location || '',
+                                    lat: parseFloat(formData.lat) || 0,
+                                    lng: parseFloat(formData.lng) || 0
+                                }}
+                                onChange={(val) => {
+                                    setFormData(prev => ({
+                                        ...prev,
+                                        location: val.name,
+                                        lat: val.lat.toString(),
+                                        lng: val.lng.toString()
+                                    }));
+                                }}
+                                error={errors.location}
                             />
                         </div>
-
-                        <div className="flex gap-4">
-                            <button 
-                                type="button"
-                                onClick={handleGetCurrentLocation}
-                                disabled={isGettingLocation}
-                                className="flex-1 py-2.5 border border-[#F43F5E] text-[#F43F5E] rounded-lg hover:bg-[#FFF0F3] text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                                {isGettingLocation ? (
-                                    <>
-                                        <Loader2 size={16} className="animate-spin" />
-                                        Getting Location...
-                                    </>
-                                ) : (
-                                    <>
-                                        <MapPinIcon size={16} />
-                                        Use Current Location
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                        {errors.location && (
-                            <div className="flex items-center gap-2 text-red-500 text-xs font-medium">
-                                <AlertCircle size={14} />
-                                {errors.location}
-                            </div>
-                        )}
-
-                        {/* Latitude & Longitude Fields */}
-                        <div className="grid grid-cols-2 gap-4 pt-2">
-                            <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Latitude</label>
-                                <input 
-                                    type="text" 
-                                    placeholder="e.g., -6.2088"
-                                    value={formData.lat}
-                                    onChange={(e) => setFormData({...formData, lat: e.target.value})}
-                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-gray-900"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Longitude</label>
-                                <input 
-                                    type="text" 
-                                    placeholder="e.g., 106.8456"
-                                    value={formData.lng}
-                                    onChange={(e) => setFormData({...formData, lng: e.target.value})}
-                                    className="w-full bg-white border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-gray-900"
-                                />
-                            </div>
-                        </div>
-                        <p className="text-xs text-gray-400">Auto-filled when using current location, or enter manually from Google Maps.</p>
 
                         <div className="space-y-2 pt-2">
                             <label className="block text-sm font-semibold text-gray-700">Check-in Radius (meters)</label>

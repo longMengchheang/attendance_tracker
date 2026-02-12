@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { UserRole } from '../types';
 import { supabase, Users } from '@/lib/supabase';
 
@@ -46,6 +47,7 @@ function setSession(session: any | null) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Users | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
 
   // Load user on mount and listen for auth changes
   useEffect(() => {
@@ -59,27 +61,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state change:', event, session);
       
-      if (session) {
-        const loggedInUser: Users = {
-          id: session.user.id,
-          name: session.user.user_metadata?.name || 'User',
-          role: (session.user.user_metadata?.role as 'student' | 'teacher') || 'student',
-          created_at: new Date().toISOString(), // Mocked for auth state change
-        };
-        setUser(loggedInUser);
-        setCurrentUser(loggedInUser);
-        setSession(session);
-      } else {
-        // Only clear if explicitly signed out or session expired
-        // But we want to keep local state if just refreshing page and listener hasn't fired yet?
-        // Actually, if session is null, we should probably clear.
-        if (event === 'SIGNED_OUT') {
-           setUser(null);
-           setCurrentUser(null);
-           setSession(null);
+      try {
+        if (session) {
+          // Fetch user profile from public table to get the correct role
+          const { data: profile, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (error) {
+            console.error('Error fetching user profile:', error);
+          }
+
+          const role = (profile?.role as 'student' | 'teacher') || (session.user.user_metadata?.role as 'student' | 'teacher') || 'student';
+          const name = profile?.name || session.user.user_metadata?.name || 'User';
+
+          const loggedInUser: Users = {
+            id: session.user.id,
+            name: name,
+            role: role,
+            created_at: new Date().toISOString(),
+          };
+          setUser(loggedInUser);
+          setCurrentUser(loggedInUser);
+          setSession(session);
+        } else {
+          // Only clear if explicitly signed out or session expired
+          // But we want to keep local state if just refreshing page and listener hasn't fired yet?
+          // Actually, if session is null, we should probably clear.
+          if (event === 'SIGNED_OUT') {
+             setUser(null);
+             setCurrentUser(null);
+             setSession(null);
+          }
         }
+      } catch (error: any) {
+        console.error('Unexpected error in auth state change:', error);
+        
+        // Handle invalid refresh token by clearing session
+        if (error?.message?.includes('Refresh Token Not Found') || 
+            error?.message?.includes('Invalid Refresh Token')) {
+          console.log('Clearing invalid session...');
+          setUser(null);
+          setCurrentUser(null);
+          setSession(null);
+          router.push('/login');
+        }
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     });
 
     return () => {
@@ -90,11 +121,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Signup - with password
   const signup = async (name: string, email: string, password: string, role: UserRole): Promise<{ success: boolean; error?: string }> => {
     // ... existing signup code ...
-    // Note: To keep context clean, I'm just pasting the existing function references here if possible, 
-    // but replace_file_content needs the FULL content of the block I'm replacing.
-    // Since I'm replacing the useEffect, I need to keep the other functions intact or just include them in the block if they are in range.
-    // The previous tool call covered up to line 146. 
-    // I will rewrite the whole provider body to be safe and clean.
     
     try {
       const res = await fetch('/api/auth/register', {
@@ -132,10 +158,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data.session) {
         // The onAuthStateChange might pick this up too, but setting it here gives immediate feedback
+        const profile = data.profile;
+        const role = (profile?.role as 'student' | 'teacher') || (data.user.user_metadata?.role as 'student' | 'teacher') || 'student';
+        const name = profile?.name || data.user.user_metadata?.name || 'User';
+
         const loggedInUser: Users = {
             id: data.user.id,
-            name: data.user.user_metadata?.name || 'User',
-            role: (data.user.user_metadata?.role as 'student' | 'teacher') || 'student',
+            name: name,
+            role: role,
             created_at: new Date().toISOString(),
         };
         setUser(loggedInUser);
@@ -143,7 +173,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(data.session);
         
         // Also set supabase session client-side to ensure consistency
-        await supabase.auth.setSession(data.session);
+        // We do NOT await this, as it can block the UI redirect if it takes too long.
+        supabase.auth.setSession(data.session);
       }
 
       return { success: true };
@@ -153,10 +184,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    // Fire and forget logout
+    supabase.auth.signOut();
     setUser(null);
     setCurrentUser(null);
     setSession(null);
+    router.push('/login');
   };
 
   // Reset Password - sends reset email

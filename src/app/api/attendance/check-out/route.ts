@@ -20,6 +20,9 @@ export async function POST(request: Request) {
       record,
     });
   } catch (error: any) {
+    if (error.name === 'AbortError') {
+      return new NextResponse(null, { status: 499 });
+    }
     console.error('Error checking out:', error);
 
     if (error.message === 'Attendance record not found') {

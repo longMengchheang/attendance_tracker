@@ -47,5 +47,6 @@ export interface Attendance {
   class_id: string;
   check_in_time: string;
   check_out_time: string | null;
+  status: 'present' | 'late' | 'absent';
   date: string;
 }

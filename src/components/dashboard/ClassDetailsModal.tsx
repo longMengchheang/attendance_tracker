@@ -1,9 +1,10 @@
-'use client';
-
-import { useState } from 'react';
-import { X, MapPin, Clock, Users, Calendar, Filter, ChevronDown, CheckCircle2, XCircle, AlertCircle, Search, UserCircle } from 'lucide-react';
+// ... (imports remain)
+import { useState, useEffect } from 'react';
+import { X, MapPin, Clock, Users, Calendar, Filter, ChevronDown, CheckCircle2, XCircle, AlertCircle, Search, UserCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { fetchStudentAttendanceReport, fetchClassStudents, Student } from '@/lib/api';
 
+// ... (ClassData interface and formatTime helper remain)
 interface ClassData {
   id: string | number;
   name: string;
@@ -18,11 +19,9 @@ interface ClassData {
   check_in_end?: string | null;
 }
 
-// Helper to format ISO time to HH:MM AM/PM
 const formatTime = (isoString?: string | null) => {
     if (!isoString) return '--:--';
     try {
-        // Append Z if missing to ensure UTC parsing
         const timeValue = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
         return new Date(timeValue).toLocaleTimeString([], { 
             hour: 'numeric', 
@@ -40,25 +39,21 @@ interface ClassDetailsModalProps {
   classData: ClassData | null;
 }
 
-// Mock Attendance Data
-const attendanceData = Array.from({ length: 15 }, (_, i) => ({
-    id: i,
-    student: ['Ashley Cooper', 'Brad Pitt', 'Charlie Puth', 'Diana Ross', 'Ethan Hunt', 'Fiona Gallagher'][i % 6],
-    present: 18 + (i % 3),
-    absent: i % 2,
-    late: i % 2,
-    rate: 85 + (i % 15)
-}));
-
 export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassDetailsModalProps) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'Overview' | 'Students' | 'Attendance'>('Overview');
-  const [selectedMonth, setSelectedMonth] = useState('March');
-  const [selectedYear, setSelectedYear] = useState('2025');
+  
+  // Date state for report
+  const today = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(today.getMonth());
+  const [selectedYear, setSelectedYear] = useState(today.getFullYear());
 
-  if (!isOpen || !classData) return null;
+  // Data state
+  const [attendanceReport, setAttendanceReport] = useState<any>(null);
+  const [classmates, setClassmates] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Role-based colors - students see blue, teachers see red
+  // Colors
   const isStudent = user?.role === 'student';
   const primaryColor = isStudent ? '#3B82F6' : '#F43F5E';
   const primaryBg = isStudent ? 'bg-blue-50' : 'bg-[#FFF0F3]';
@@ -66,6 +61,51 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
   const tabActiveBorder = isStudent ? 'border-[#3B82F6]' : 'border-[#F43F5E]';
   const tabActiveText = isStudent ? 'text-[#3B82F6]' : 'text-[#F43F5E]';
   const focusRing = isStudent ? 'focus:ring-blue-300' : 'focus:ring-[#F43F5E]';
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  // Fetch Attendance Report
+  useEffect(() => {
+    if (isOpen && activeTab === 'Attendance' && classData && user) {
+      const loadReport = async () => {
+        setLoading(true);
+        try {
+          const data = await fetchStudentAttendanceReport(user.id, selectedMonth, selectedYear, String(classData.id));
+          setAttendanceReport(data);
+        } catch (e) {
+          console.error("Failed to load report", e);
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadReport();
+    }
+  }, [isOpen, activeTab, classData, user, selectedMonth, selectedYear]);
+
+  // Fetch Students (Classmates)
+  useEffect(() => {
+    if (isOpen && activeTab === 'Students' && classData && user) {
+      const loadStudents = async () => {
+        setLoading(true);
+        try {
+          // Fetch students using the new API support (requesterId + role)
+          const data = await fetchClassStudents(String(classData.id), user.id, user.role as 'student' | 'teacher');
+          setClassmates(data);
+        } catch (e) {
+          console.error("Failed to load students", e);
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadStudents();
+    }
+  }, [isOpen, activeTab, classData, user]);
+
+
+  if (!isOpen || !classData) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -171,8 +211,8 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
 
             {/* STUDENTS TAB */}
             {activeTab === 'Students' && (
-                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div className="p-4 border-b border-gray-100 flex items-center gap-4">
+                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                    <div className="p-4 border-b border-gray-100 flex items-center gap-4 shrink-0">
                         <div className="relative flex-1 max-w-md">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                             <input 
@@ -182,18 +222,29 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                             />
                         </div>
                     </div>
-                    <div className="divide-y divide-gray-50 max-h-[400px] overflow-y-auto">
-                        {attendanceData.map((s, i) => (
-                            <div key={i} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-400">
-                                        <UserCircle size={20} />
-                                    </div>
-                                    <span className="font-medium text-gray-700">{s.student}</span>
-                                </div>
-                                <span className="text-xs text-gray-400 font-mono">ID: {2024000 + i}</span>
+                    {/* SCROLLBAR FIX: Removed max-h and allow usage of parent scroll or expand */}
+                    <div className="divide-y divide-gray-50">
+                        {loading ? (
+                            <div className="p-8 text-center flex justify-center">
+                                <Loader2 className={`animate-spin ${primaryText}`} size={24} />
                             </div>
-                        ))}
+                        ) : classmates.length === 0 ? (
+                            <div className="p-8 text-center text-gray-500">
+                                No students found enrolled in this class.
+                            </div>
+                        ) : (
+                            classmates.map((student) => (
+                                <div key={student.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-400">
+                                            <UserCircle size={20} />
+                                        </div>
+                                        <span className="font-medium text-gray-700">{student.name}</span>
+                                    </div>
+                                    <span className="text-xs text-gray-400 font-mono">ID: {student.id.substring(0, 8)}...</span>
+                                </div>
+                            ))
+                        )}
                     </div>
                  </div>
             )}
@@ -208,87 +259,107 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                             <div className="relative">
                                 <select 
                                     value={selectedMonth}
-                                    onChange={(e) => setSelectedMonth(e.target.value)}
+                                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
                                     className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#F43F5E] cursor-pointer shadow-sm hover:border-gray-300 transition-colors"
                                 >
-                                    <option>January</option>
-                                    <option>February</option>
-                                    <option>March</option>
+                                    {monthNames.map((m, i) => (
+                                        <option key={i} value={i}>{m}</option>
+                                    ))}
                                 </select>
                                 <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                             </div>
                             <div className="relative">
                                 <select 
                                     value={selectedYear}
-                                    onChange={(e) => setSelectedYear(e.target.value)}
+                                    onChange={(e) => setSelectedYear(Number(e.target.value))}
                                     className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#F43F5E] cursor-pointer shadow-sm hover:border-gray-300 transition-colors"
                                 >
-                                    <option>2024</option>
-                                    <option>2025</option>
+                                    <option value={2024}>2024</option>
+                                    <option value={2025}>2025</option>
+                                    <option value={2026}>2026</option>
                                 </select>
                                 <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                             </div>
                          </div>
                     </div>
 
-                    {/* Summary Cards */}
-                    <div className="grid grid-cols-3 gap-4">
-                         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
-                            <div className="text-green-600 font-bold text-2xl mb-1 flex items-center gap-2">
-                                <CheckCircle2 size={24} />
-                                420
-                            </div>
-                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Present</p>
+                    {loading ? (
+                         <div className="flex justify-center p-12">
+                             <Loader2 className={`animate-spin ${primaryText}`} size={32} />
                          </div>
-                         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
-                            <div className="text-red-500 font-bold text-2xl mb-1 flex items-center gap-2">
-                                <XCircle size={24} />
-                                38
+                    ) : (
+                        <>
+                            {/* Summary Cards */}
+                            <div className="grid grid-cols-3 gap-4">
+                                 <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
+                                    <div className="text-green-600 font-bold text-2xl mb-1 flex items-center gap-2">
+                                        <CheckCircle2 size={24} />
+                                        {attendanceReport?.summary.present ?? 0}
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Present</p>
+                                 </div>
+                                 <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
+                                    <div className="text-orange-500 font-bold text-2xl mb-1 flex items-center gap-2">
+                                        <AlertCircle size={24} />
+                                        {attendanceReport?.summary.late ?? 0}
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Late</p>
+                                 </div>
+                                 <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
+                                    <div className="text-red-500 font-bold text-2xl mb-1 flex items-center gap-2">
+                                        <XCircle size={24} />
+                                        {attendanceReport?.summary.absent ?? 0}
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Absent</p>
+                                 </div>
                             </div>
-                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Absent</p>
-                         </div>
-                         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
-                            <div className="text-orange-500 font-bold text-2xl mb-1 flex items-center gap-2">
-                                <AlertCircle size={24} />
-                                12
-                            </div>
-                            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Late</p>
-                         </div>
-                    </div>
 
-                    {/* Report Table */}
-                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
-                                <tr>
-                                    <th className="px-6 py-4">Student</th>
-                                    <th className="px-6 py-4 text-center">Present</th>
-                                    <th className="px-6 py-4 text-center">Absent</th>
-                                    <th className="px-6 py-4 text-center">Late</th>
-                                    <th className="px-6 py-4 text-center">Attendance %</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {attendanceData.map((row) => (
-                                    <tr key={row.id} className="hover:bg-gray-50/80 transition-colors">
-                                        <td className="px-6 py-4 font-medium text-gray-700">{row.student}</td>
-                                        <td className="px-6 py-4 text-center text-green-600 font-semibold">{row.present}</td>
-                                        <td className="px-6 py-4 text-center text-red-500">{row.absent}</td>
-                                        <td className="px-6 py-4 text-center text-orange-500">{row.late}</td>
-                                        <td className="px-6 py-4 text-center">
-                                            <span className={`inline-block px-2 py-1 rounded text-xs font-bold ${
-                                                row.rate >= 90 ? 'bg-green-100 text-green-700' :
-                                                row.rate >= 75 ? 'bg-yellow-100 text-yellow-700' :
-                                                'bg-red-100 text-red-700'
-                                            }`}>
-                                                {row.rate}%
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                            {/* Report Table - Showing Sessions for Student */}
+                            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
+                                        <tr>
+                                            <th className="px-6 py-4">Date</th>
+                                            <th className="px-6 py-4 text-center">Status</th>
+                                            <th className="px-6 py-4 text-center">Scores</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-50">
+                                        {attendanceReport?.details.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={3} className="px-6 py-8 text-center text-gray-500">
+                                                    No attendance records for this month.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            attendanceReport?.details.map((session: any) => (
+                                                <tr key={session.classId + session.date} className="hover:bg-gray-50/80 transition-colors">
+                                                    <td className="px-6 py-4 font-medium text-gray-700">
+                                                        {new Date(session.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                        <div className="text-xs text-gray-400 mt-0.5">
+                                                            {session.checkInTime ? new Date(session.checkInTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'No check-in'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${
+                                                            session.status === 'present' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                                                            session.status === 'late' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                                                            'bg-red-100 text-red-700 border-red-200'
+                                                        }`}>
+                                                            {session.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center font-mono text-gray-500">
+                                                        {session.score} pts
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 

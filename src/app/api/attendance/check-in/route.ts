@@ -2,14 +2,21 @@ import { NextResponse } from 'next/server';
 import { checkIn } from '@/services/attendance.service';
 import { isEnrolled } from '@/services/enrollment.service';
 
-// POST /api/attendance/check-in - Check in to a class
+// POST /api/attendance/check-in - Check in to a class with location validation
 export async function POST(request: Request) {
   try {
-    const { studentId, classId } = await request.json();
+    const { studentId, classId, studentLat, studentLng } = await request.json();
 
     if (!studentId || !classId) {
       return NextResponse.json(
         { error: 'Student ID and class ID are required' },
+        { status: 400 }
+      );
+    }
+
+    if (studentLat === undefined || studentLng === undefined) {
+      return NextResponse.json(
+        { error: 'Student location (latitude and longitude) is required' },
         { status: 400 }
       );
     }
@@ -23,7 +30,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await checkIn(studentId, classId);
+    const result = await checkIn(studentId, classId, parseFloat(studentLat), parseFloat(studentLng));
 
     if (result.alreadyCheckedIn) {
       return NextResponse.json({
@@ -44,10 +51,19 @@ export async function POST(request: Request) {
     }
     console.error('Error checking in:', error);
 
-    if (error.message === 'Already checked in and out for this class today') {
+    // Return specific error messages from the service
+    const knownErrors = [
+      'Class not found',
+      'Class is not currently ongoing',
+      'Class does not have start/end times configured',
+      'Class location is not configured',
+      'Already checked in and out for this class today',
+    ];
+
+    if (knownErrors.some(e => error.message?.includes(e)) || error.message?.includes('away')) {
       return NextResponse.json(
         { error: error.message },
-        { status: 409 }
+        { status: 400 }
       );
     }
 

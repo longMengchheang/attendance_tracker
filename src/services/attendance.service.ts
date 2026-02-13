@@ -1,10 +1,30 @@
 import { supabase, Attendance } from '@/lib/supabase';
+import { haversineDistance } from '@/lib/geo';
 
 /**
- * Check in a student
+ * Supabase returns timestamps without timezone suffix.
+ * new Date() treats these as local time, but they are actually UTC.
+ * This helper ensures they are parsed as UTC.
  */
-export async function checkIn(studentId: string, classId: string): Promise<{ record: Attendance | null; alreadyCheckedIn: boolean }> {
-  const today = new Date().toISOString().split('T')[0];
+function ensureUTC(ts: string): Date {
+  if (/[Z]$/i.test(ts) || /[+-]\d{2}:\d{2}$/.test(ts)) return new Date(ts);
+  return new Date(ts + 'Z');
+}
+/**
+ * Check in a student with location validation and status assignment.
+ * Uses server time for all logic.
+ */
+export async function checkIn(
+  studentId: string,
+  classId: string,
+  studentLat: number,
+  studentLng: number
+): Promise<{ record: Attendance | null; alreadyCheckedIn: boolean }> {
+  const now = new Date();
+  // Use local date string YYYY-MM-DD to match frontend request and user's timezone
+  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString()
+    .split('T')[0];
 
   // Check if already checked in today
   const { data: existing } = await supabase
@@ -19,11 +39,76 @@ export async function checkIn(studentId: string, classId: string): Promise<{ rec
     return { record: existing, alreadyCheckedIn: true };
   }
 
+  // Fetch class details for validation
+  const { data: classData, error: classError } = await supabase
+    .from('classes')
+    .select('*')
+    .eq('id', classId)
+    .single();
+
+  if (classError || !classData) {
+    throw new Error('Class not found');
+  }
+
+  // Validate class is ongoing
+  // Supabase stores timestamps in UTC. Without Z suffix, new Date()
+  // would misinterpret them as local time, causing offset errors.
+  const startStr = classData.check_in_start;
+  const endStr = classData.check_in_end;
+
+  if (!startStr || !endStr) {
+    throw new Error('Class does not have start/end times configured');
+  }
+
+  const startTime = ensureUTC(startStr);
+  const endTime = ensureUTC(endStr);
+
+  if (now < startTime || now > endTime) {
+    throw new Error('Class is not currently ongoing');
+  }
+
+  // Validate location
+  const classLat = parseFloat(classData.latitude || '0');
+  const classLng = parseFloat(classData.longitude || '0');
+  const radius = classData.radius || 100;
+
+  // Only validate distance if location is configured
+  if (classData.latitude && classData.longitude) {
+      const distance = haversineDistance(studentLat, studentLng, classLat, classLng);
+
+      if (distance > radius) {
+        throw new Error(`You are ${Math.round(distance)}m away. Must be within ${radius}m to check in.`);
+      }
+  }
+
+  // Determine status: present if within 15 minutes of start, otherwise late
+  // Determine status based on percentage of class duration
+  // Duration in milliseconds
+  const duration = endTime.getTime() - startTime.getTime();
+  if (duration <= 0) {
+    throw new Error('Invalid class duration');
+  }
+
+  const elapsed = now.getTime() - startTime.getTime();
+  const latenessPercentage = elapsed / duration;
+
+  let status: 'present' | 'late' | 'absent';
+
+  if (latenessPercentage <= 0.15) {
+    status = 'present';
+  } else if (latenessPercentage <= 0.40) {
+    status = 'late';
+  } else {
+    throw new Error('Clock-in time exceeded (Absent). You are more than 40% late.');
+  }
+
   const { data, error } = await supabase
     .from('attendance')
     .insert({
       student_id: studentId,
       class_id: classId,
+      check_in_time: now.toISOString(),
+      status,
       date: today,
     })
     .select()
@@ -37,13 +122,56 @@ export async function checkIn(studentId: string, classId: string): Promise<{ rec
 }
 
 /**
- * Check out a student
+ * Check out a student. Only allowed after class end time.
  */
 export async function checkOut(attendanceId: string): Promise<Attendance | null> {
+  // Fetch the attendance record to get the class_id
+  const { data: record, error: recordError } = await supabase
+    .from('attendance')
+    .select('*')
+    .eq('id', attendanceId)
+    .single();
+
+  if (recordError || !record) {
+    throw new Error('Attendance record not found');
+  }
+
+  if (record.check_out_time) {
+    throw new Error('Already checked out');
+  }
+
+  // Fetch the class to validate end time
+  const { data: classData, error: classError } = await supabase
+    .from('classes')
+    .select('check_in_end')
+    .eq('id', record.class_id)
+    .single();
+
+  if (classError || !classData) {
+    throw new Error('Class not found');
+  }
+
+  const now = new Date();
+  const endTime = classData.check_in_end ? ensureUTC(classData.check_in_end) : null;
+
+  if (endTime && now < endTime) {
+    throw new Error('Clock-out is only available after class ends.');
+  }
+
+  if (!endTime) {
+     throw new Error('Class end time is not configured.');
+  }
+
+  // 15-minute window after class ends
+  const fifteenMinutesAfter = new Date(endTime.getTime() + 15 * 60 * 1000);
+  if (now > fifteenMinutesAfter) {
+    throw new Error('Clock-out window has expired (15 mins after class).');
+  }
+
   const { data, error } = await supabase
     .from('attendance')
     .update({
-      check_out_time: new Date().toISOString(),
+      check_out_time: now.toISOString(),
     })
     .eq('id', attendanceId)
     .select()
@@ -153,4 +281,274 @@ export async function getAttendanceRecords(filters: {
 
   if (error || !data) return [];
   return data;
+}
+
+/**
+ * Get ongoing class attendance: all enrolled students with their attendance status.
+ * Students who haven't checked in are marked as "absent".
+ */
+export async function getOngoingClassAttendance(classId: string): Promise<any[]> {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Get all enrolled students
+  const { data: enrollments, error: enrollError } = await supabase
+    .from('enrollments')
+    .select(`
+      student:student_id (
+        id,
+        name
+      )
+    `)
+    .eq('class_id', classId);
+
+  if (enrollError || !enrollments) return [];
+
+  // Get today's attendance records
+  const { data: records, error: recordsError } = await supabase
+    .from('attendance')
+    .select('*')
+    .eq('class_id', classId)
+    .eq('date', today);
+
+  if (recordsError) return [];
+
+  const attendanceMap = new Map<string, any>();
+  if (records) {
+    for (const record of records) {
+      attendanceMap.set(record.student_id, record);
+    }
+  }
+
+  // Merge: enrolled students + their attendance status
+  return enrollments.map((e: any) => {
+    const student = e.student;
+    const record = attendanceMap.get(student.id);
+
+    return {
+      studentId: student.id,
+      studentName: student.name || 'Unknown',
+      status: record?.status || 'absent',
+      checkInTime: record?.check_in_time || null,
+      checkOutTime: record?.check_out_time || null,
+      attendanceId: record?.id || null,
+    };
+  });
+}
+
+/**
+ * Get monthly attendance report for a student
+ * Calculates score: Present=1.0, Late=0.5, Absent=0.0
+ */
+export async function getStudentAttendanceReport(
+  studentId: string,
+  month: number, // 0-11
+  year: number,
+  classId?: string
+): Promise<{
+  details: any[];
+  summary: {
+    totalSessions: number;
+    present: number;
+    late: number;
+    absent: number;
+    totalScore: number;
+    attendancePercentage: number;
+  };
+}> {
+  // 1. Get all classes the student was enrolled in
+  // We need to find classes that *had sessions* during this month.
+  // For simplicity, we'll look for all classes where the student is enrolled,
+  // then look for all "sessions" (unique dates) that occurred for those classes in the target month.
+  // Actually, a better approach given the schema might be to look at *scheduled* classes if we had a schedule table.
+  // But we only have `classes` table which seems to represent a "Course" that might have a recurring schedule or just be a single session?
+  //
+  // Looking at `check_in_start`, it seems `classes` table acts more like specific "Sessions" or "Events" because they have specific start/end timestamps (YYYY-MM-DDTHH:mm...).
+  // So we just need to find all `classes` where `check_in_start` falls within the target month AND student is enrolled.
+
+  // Enable filtering by date range on classes check_in_start
+  const startDate = new Date(Date.UTC(year, month, 1));
+  const endDate = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59)); // Last day of month
+
+  // Get student enrollments to find relevant class IDs
+  let query = supabase
+    .from('enrollments')
+    .select('class_id')
+    .eq('student_id', studentId);
+
+  if (classId) {
+    query = query.eq('class_id', classId);
+  }
+
+  const { data: enrollments } = await query;
+
+  if (!enrollments || enrollments.length === 0) {
+    return {
+      details: [],
+      summary: { totalSessions: 0, present: 0, late: 0, absent: 0, totalScore: 0, attendancePercentage: 0 }
+    };
+  }
+
+  const classIds = enrollments.map(e => e.class_id);
+
+  // Fetch classes that happened in this month
+  const { data: sessions } = await supabase
+    .from('classes')
+    .select('id, name, check_in_start, check_in_end')
+    .in('id', classIds)
+    .gte('check_in_start', startDate.toISOString())
+    .lte('check_in_start', endDate.toISOString());
+
+  if (!sessions || sessions.length === 0) {
+    return {
+      details: [],
+      summary: { totalSessions: 0, present: 0, late: 0, absent: 0, totalScore: 0, attendancePercentage: 0 }
+    };
+  }
+
+  // Fetch attendance records for these sessions
+  const { data: records } = await supabase
+    .from('attendance')
+    .select('*')
+    .eq('student_id', studentId)
+    .in('class_id', sessions.map(s => s.id));
+
+  const recordMap = new Map();
+  if (records) {
+    records.forEach(r => recordMap.set(r.class_id, r));
+  }
+
+  let totalScore = 0;
+  let presentCount = 0;
+  let lateCount = 0;
+  let absentCount = 0;
+
+  const details = sessions.map(session => {
+    const record = recordMap.get(session.id);
+    let status = 'absent';
+    let score = 0;
+    let checkInTime = null;
+
+    if (record) {
+      status = record.status;
+      checkInTime = record.check_in_time;
+      if (status === 'present') {
+        score = 1.0;
+        presentCount++;
+      } else if (status === 'late') {
+        score = 0.5;
+        lateCount++;
+      } else {
+        // Status might be 'absent' explicitly if we ever insert that
+        score = 0;
+        absentCount++;
+      }
+    } else {
+      absentCount++;
+    }
+
+    totalScore += score;
+
+    return {
+      classId: session.id,
+      className: session.name,
+      date: session.check_in_start,
+      status,
+      score,
+      checkInTime
+    };
+  });
+
+  const totalSessions = sessions.length;
+  const attendancePercentage = totalSessions > 0 ? (totalScore / totalSessions) * 100 : 0;
+
+  return {
+    details,
+    summary: {
+      totalSessions,
+      present: presentCount,
+      late: lateCount,
+      absent: absentCount,
+      totalScore,
+      attendancePercentage: Math.round(attendancePercentage * 10) / 10 // Round to 1 decimal
+    }
+  };
+}
+
+/**
+ * Get overall attendance stats for a student
+ * Calculates percentage across ALL past classes
+ */
+export async function getStudentOverallStats(studentId: string): Promise<{
+    attendancePercentage: number;
+    totalClasses: number;
+    present: number;
+    late: number;
+    absent: number;
+}> {
+    // 1. Get all enrollments
+    const { data: enrollments } = await supabase
+        .from('enrollments')
+        .select('class_id')
+        .eq('student_id', studentId);
+
+    if (!enrollments || enrollments.length === 0) {
+        return { attendancePercentage: 0, totalClasses: 0, present: 0, late: 0, absent: 0 };
+    }
+
+    const classIds = enrollments.map(e => e.class_id);
+    const now = new Date().toISOString();
+
+    // 2. Get all PAST classes (sessions)
+    const { data: sessions } = await supabase
+        .from('classes')
+        .select('id')
+        .in('id', classIds)
+        .lt('check_in_end', now); // Only count finished classes
+
+    if (!sessions || sessions.length === 0) {
+        return { attendancePercentage: 0, totalClasses: 0, present: 0, late: 0, absent: 0 };
+    }
+
+    // 3. Get attendance records for these sessions
+    const { data: records } = await supabase
+        .from('attendance')
+        .select('status, class_id')
+        .eq('student_id', studentId)
+        .in('class_id', sessions.map(s => s.id));
+
+    const recordMap = new Map();
+    if (records) {
+        records.forEach(r => recordMap.set(r.class_id, r.status));
+    }
+
+    let totalScore = 0;
+    let presentCount = 0;
+    let lateCount = 0;
+    let absentCount = 0;
+
+    sessions.forEach(session => {
+        const status = recordMap.get(session.id);
+        if (status === 'present') {
+            totalScore += 1.0;
+            presentCount++;
+        } else if (status === 'late') {
+            totalScore += 0.5;
+            lateCount++;
+        } else {
+            // No record or explicit absent
+            totalScore += 0;
+            absentCount++;
+        }
+    });
+
+    const totalClasses = sessions.length;
+    const attendancePercentage = totalClasses > 0 ? (totalScore / totalClasses) * 100 : 0;
+
+    return {
+        attendancePercentage: Math.round(attendancePercentage * 10) / 10,
+        totalClasses,
+        present: presentCount,
+        late: lateCount,
+        absent: absentCount
+    };
 }

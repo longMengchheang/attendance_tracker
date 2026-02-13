@@ -1,5 +1,7 @@
 import { pgTable, uuid, text, timestamp, integer, pgEnum } from 'drizzle-orm/pg-core';
 
+export const attendanceStatusEnum = pgEnum('attendance_status', ['present', 'late', 'absent']);
+
 export const roleEnum = pgEnum('role', ['student', 'teacher']);
 
 // Note: 'users' table in Supabase public schema.
@@ -40,5 +42,6 @@ export const attendance = pgTable('attendance', {
   class_id: uuid('class_id').references(() => classes.id).notNull(),
   check_in_time: timestamp('check_in_time').notNull(),
   check_out_time: timestamp('check_out_time'),
+  status: text('status').default('absent').notNull(),
   date: text('date').notNull(),
 });

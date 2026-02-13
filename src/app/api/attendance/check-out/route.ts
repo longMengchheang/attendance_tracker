@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { checkOut } from '@/services/attendance.service';
 
-// POST /api/attendance/check-out - Check out from a class
+// POST /api/attendance/check-out - Check out from a class (only after class ends)
 export async function POST(request: Request) {
   try {
     const { attendanceId } = await request.json();
@@ -36,6 +36,13 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Already checked out' },
         { status: 409 }
+      );
+    }
+
+    if (error.message === 'Check-out is only available after class ends.') {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
       );
     }
 

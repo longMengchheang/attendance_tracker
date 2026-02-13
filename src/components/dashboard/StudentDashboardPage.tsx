@@ -6,7 +6,7 @@ import JoinClassModal from '@/components/dashboard/JoinClassModal';
 import ClassDetailsModal from '@/components/dashboard/ClassDetailsModal';
 import { MapPin, Users, BookOpen, Eye, Loader2, UserCircle } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { fetchStudentEnrollments, Enrollment } from '@/lib/api';
+import { fetchStudentEnrollments, fetchStudentStats, Enrollment } from '@/lib/api';
 
 // Extended enrollment type for UI display
 interface EnrollmentWithUI extends Enrollment {
@@ -33,8 +33,12 @@ export default function StudentDashboardPage() {
     setError(null);
     
     try {
-      const data = await fetchStudentEnrollments(user.id);
-      setEnrollments(data);
+      const [enrollmentData, statsData] = await Promise.all([
+         fetchStudentEnrollments(user.id),
+         fetchStudentStats(user.id)
+      ]);
+      setEnrollments(enrollmentData);
+      setStats(statsData);
     } catch (err: any) {
       setError(err.message || 'Failed to load classes');
     } finally {
@@ -53,6 +57,9 @@ export default function StudentDashboardPage() {
     setSelectedClass(enrollment);
     setIsDetailsOpen(true);
   };
+
+  // UI State for stats
+  const [stats, setStats] = useState<{attendancePercentage: number} | null>(null);
 
   // Loading state
   if (isLoading) {
@@ -102,13 +109,16 @@ export default function StudentDashboardPage() {
         <StatCard 
             icon="users" 
             label="Attendance Rate" 
-            value="--%" 
+            value={`${stats?.attendancePercentage ?? '--'}%`}
         />
       </div>
 
+      {/* Monthly Attendance Report - REMOVED per user request */}
+
       {/* Your Classes Section */}
       <div>
-        <div className="mb-6">
+        {/* ... (existing classes list) ... */}
+         <div className="mb-6">
              <h2 className="text-xl font-bold text-gray-800">Your Classes ({enrollments.length})</h2>
              <p className="text-sm text-gray-500 mt-1">Classes you are enrolled in</p>
         </div>

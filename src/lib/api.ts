@@ -43,9 +43,19 @@ export interface AttendanceRecord {
   classId: string;
   checkInTime: string;
   checkOutTime: string | null;
+  status: 'present' | 'late' | 'absent';
   date: string;
   studentName?: string;
   className?: string;
+}
+
+export interface OngoingStudent {
+  studentId: string;
+  studentName: string;
+  status: 'present' | 'late' | 'absent';
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  attendanceId: string | null;
 }
 
 export interface Student {
@@ -150,9 +160,11 @@ export async function deleteClass(classId: string, teacherId: string): Promise<v
 
 export async function fetchClassStudents(
   classId: string, 
-  teacherId: string
+  requesterId: string,
+  role: 'teacher' | 'student' = 'teacher'
 ): Promise<Student[]> {
-  const res = await fetch(`/api/classes/${classId}/students?teacherId=${teacherId}`);
+  const param = role === 'teacher' ? 'teacherId' : 'studentId';
+  const res = await fetch(`/api/classes/${classId}/students?${param}=${requesterId}`);
   const data = await res.json();
   
   if (!res.ok) {
@@ -226,12 +238,14 @@ export async function joinClass(
 
 export async function checkIn(
   studentId: string, 
-  classId: string
+  classId: string,
+  studentLat: number,
+  studentLng: number
 ): Promise<{ record: AttendanceRecord; alreadyCheckedIn: boolean }> {
   const res = await fetch('/api/attendance/check-in', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ studentId, classId }),
+    body: JSON.stringify({ studentId, classId, studentLat, studentLng }),
   });
   
   const data = await res.json();
@@ -259,6 +273,28 @@ export async function checkOut(attendanceId: string): Promise<AttendanceRecord> 
   return data.record;
 }
 
+export async function fetchOngoingClass(userId: string, role: string): Promise<Class | null> {
+  const res = await fetch(`/api/classes/ongoing?userId=${userId}&role=${role}`);
+  const data = await res.json();
+  
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to fetch ongoing class');
+  }
+  
+  return data.class;
+}
+
+export async function fetchOngoingAttendance(classId: string): Promise<OngoingStudent[]> {
+  const res = await fetch(`/api/attendance/ongoing?classId=${classId}`);
+  const data = await res.json();
+  
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to fetch attendance');
+  }
+  
+  return data.students;
+}
+
 export async function fetchAttendanceRecords(filters: {
   classId?: string;
   studentId?: string;
@@ -277,4 +313,52 @@ export async function fetchAttendanceRecords(filters: {
   }
   
   return data.records;
+}
+
+export async function fetchStudentAttendanceReport(
+  studentId: string,
+  month: number,
+  year: number,
+  classId?: string
+): Promise<{
+  details: any[];
+  summary: {
+    totalSessions: number;
+    present: number;
+    late: number;
+    absent: number;
+    totalScore: number;
+    attendancePercentage: number;
+  };
+}> {
+  let url = `/api/attendance/report?studentId=${studentId}&month=${month}&year=${year}`;
+  if (classId) {
+    url += `&classId=${classId}`;
+  }
+  
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to fetch attendance report');
+  }
+
+  return data.report;
+}
+
+export async function fetchStudentStats(studentId: string): Promise<{
+    attendancePercentage: number;
+    totalClasses: number;
+    present: number;
+    late: number;
+    absent: number;
+}> {
+    const res = await fetch(`/api/attendance/stats?studentId=${studentId}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+        throw new Error(data.error || 'Failed to fetch student stats');
+    }
+
+    return data.stats;
 }

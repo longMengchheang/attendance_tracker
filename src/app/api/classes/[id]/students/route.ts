@@ -11,21 +11,42 @@ export async function GET(request: Request, { params }: RouteParams) {
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const teacherId = searchParams.get('teacherId');
+    const studentId = searchParams.get('studentId');
 
-    if (!teacherId) {
+    if (!teacherId && !studentId) {
       return NextResponse.json(
-        { error: 'Teacher ID is required' },
+        { error: 'Teacher ID or Student ID is required' },
         { status: 400 }
       );
     }
 
-    // Verify the teacher owns this class
-    const isOwner = await isClassTeacher(id, teacherId);
-    if (!isOwner) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 403 }
-      );
+    // If teacherId provided, verify ownership
+    if (teacherId) {
+      const isOwner = await isClassTeacher(id, teacherId);
+      if (!isOwner) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 403 }
+        );
+      }
+    } 
+    // If studentId provided, verify enrollment
+    else if (studentId) {
+      // Import directly here to avoid circular dependencies if any, or use existing service
+      const { supabase } = await import('@/lib/supabase');
+      const { data } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('class_id', id)
+        .eq('student_id', studentId)
+        .single();
+      
+      if (!data) {
+        return NextResponse.json(
+          { error: 'Unauthorized: Not enrolled in this class' },
+          { status: 403 }
+        );
+      }
     }
 
     const students = await getClassStudents(id);

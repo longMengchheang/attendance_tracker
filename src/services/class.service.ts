@@ -200,3 +200,52 @@ export async function getClassStudents(classId: string): Promise<any[]> {
   if (error || !data) return [];
   return data.map((e: any) => e.student);
 }
+
+/**
+ * Get the currently ongoing class for a user.
+ * For teachers: finds a class they own where now is between check_in_start and check_in_end.
+ * For students: finds a class they're enrolled in where now is between check_in_start and check_in_end.
+ * 
+ * Note: Supabase stores timestamps in UTC, so we compare using UTC time.
+ */
+export async function getOngoingClass(userId: string, role: string): Promise<Class | null> {
+  const now = new Date().toISOString();
+  // Check for classes that ended up to 15 minutes ago
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+  if (role === 'teacher') {
+    const { data, error } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('teacher_id', userId)
+      .lte('check_in_start', now)
+      .gte('check_in_end', fifteenMinutesAgo) // Allow seeing class for 15 mins after it ends
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return data;
+  }
+
+  // For students: first get their enrolled class IDs, then check which is ongoing
+  const { data: enrollments, error: enrollError } = await supabase
+    .from('enrollments')
+    .select('class_id')
+    .eq('student_id', userId);
+
+  if (enrollError || !enrollments || enrollments.length === 0) return null;
+
+  const classIds = enrollments.map((e: any) => e.class_id);
+
+  const { data, error } = await supabase
+    .from('classes')
+    .select('*')
+    .in('id', classIds)
+    .lte('check_in_start', now)
+    .gte('check_in_end', fifteenMinutesAgo) // Allow seeing class for 15 mins after it ends
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data;
+}

@@ -5,6 +5,7 @@ import { Plus, X, MapPin as MapPinIcon, RefreshCw, Clock, CheckCircle2, AlertCir
 import dynamic from 'next/dynamic';
 import { createClass, updateClass } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { TimePicker } from '../ui/shadcn-time-picker';
 
 const LocationPicker = dynamic(() => import('../ui/LocationPicker'), {
   ssr: false,
@@ -22,6 +23,7 @@ interface CreateClassModalProps {
         description?: string | null;
         latitude?: string | null;
         longitude?: string | null;
+        days?: string[] | null;
     };
     trigger?: React.ReactNode; 
     onClose?: () => void;
@@ -57,11 +59,17 @@ export default function CreateClassModal({
   const getLocalTime = (isoString?: string | null) => {
     if (!isoString) return '';
     // Ensure we treat the string as UTC if it lacks timezone info (Supabase timestamp vs timestamptz)
-    const timeValue = isoString.endsWith('Z') ? isoString : `${isoString}Z`;
+    // Only append Z if there is no timezone offset info in the string
+    const hasTimezone = isoString.includes('Z') || isoString.includes('+') || (isoString.includes('-') && isoString.lastIndexOf('-') > 10);
+    const timeValue = hasTimezone ? isoString : `${isoString}Z`;
     const date = new Date(timeValue);
-    const hours = date.getHours().toString().padStart(2, '0');
+    let hours = date.getHours();
     const minutes = date.getMinutes().toString().padStart(2, '0');
-    return `${hours}:${minutes}`;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    const strHours = hours.toString().padStart(2, '0');
+    return `${strHours}:${minutes} ${ampm}`;
   };
 
   const [formData, setFormData] = useState({
@@ -72,19 +80,32 @@ export default function CreateClassModal({
       lng: initialData?.longitude || '',
       radius: initialData?.radius ? Number(initialData.radius) : 100,
       startTime: getLocalTime(initialData?.startTime),
-      endTime: getLocalTime(initialData?.endTime)
+      endTime: getLocalTime(initialData?.endTime),
+      days: initialData?.days || [] as string[]
   });
   const [errors, setErrors] = useState<{time?: string; submit?: string; location?: string}>({});
 
 
 
-  // Helper to convert local HH:MM to ISO string (using today's date)
+  // Helper to convert local HH:MM (12h or 24h) to ISO string
   const toIsoString = (timeStr: string) => {
     if (!timeStr) return undefined;
     const date = new Date();
-    const [hours, minutes] = timeStr.split(':');
-    date.setHours(parseInt(hours, 10));
-    date.setMinutes(parseInt(minutes, 10));
+    
+    // Parse time string which might be "HH:MM" or "HH:MM AM/PM"
+    const match = timeStr.match(/(\d{1,2}):(\d{2})\s?(AM|PM)?/i);
+    if (!match) return undefined;
+
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const period = match[3]?.toUpperCase();
+
+    // Convert to 24h if PM/AM is present
+    if (period === 'PM' && hours < 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+
+    date.setHours(hours);
+    date.setMinutes(minutes);
     date.setSeconds(0);
     date.setMilliseconds(0);
     return date.toISOString();
@@ -121,6 +142,7 @@ export default function CreateClassModal({
                   radius: formData.radius || 100,
                   checkInStart: toIsoString(formData.startTime),
                   checkInEnd: toIsoString(formData.endTime),
+                  days: formData.days,
               });
           } else {
               await createClass(user.id, formData.name, {
@@ -131,6 +153,7 @@ export default function CreateClassModal({
                   radius: formData.radius || 100,
                   checkInStart: toIsoString(formData.startTime),
                   checkInEnd: toIsoString(formData.endTime),
+                  days: formData.days,
               });
           }
 
@@ -150,7 +173,8 @@ export default function CreateClassModal({
                   lng: '',
                   radius: 100,
                   startTime: '',
-                  endTime: ''
+                  endTime: '',
+                  days: []
               });
           }, 1500);
       } catch (err: any) {
@@ -195,7 +219,26 @@ export default function CreateClassModal({
                     <h2 className="text-xl font-bold text-gray-900">{isEditMode ? 'Update Class' : 'Create New Class'}</h2>
                     <p className="text-sm text-gray-500 mt-1">{isEditMode ? 'Modify class details' : 'Set up specific details for student enrollment'}</p>
                 </div>
-                <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 p-2 rounded-full transition-colors">
+                <button 
+                    onClick={() => {
+                        setIsOpen(false);
+                        if (!isEditMode) {
+                            setFormData({
+                                name: '',
+                                description: '',
+                                location: '',
+                                lat: '',
+                                lng: '',
+                                radius: 100,
+                                startTime: '',
+                                endTime: '',
+                                days: []
+                            });
+                            setErrors({});
+                        }
+                    }} 
+                    className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 p-2 rounded-full transition-colors"
+                >
                     <X size={20} />
                 </button>
             </div>
@@ -242,7 +285,7 @@ export default function CreateClassModal({
                                 />
                             </div>
                         </div>
-                        <p className="text-xs text-gray-400">A unique class code will be auto-generated for students to join.</p>
+
                     </section>
     
                     {/* Section 2: Location & Radius */}
@@ -283,45 +326,64 @@ export default function CreateClassModal({
                                 onChange={(e) => setFormData({...formData, radius: parseInt(e.target.value)})}
                                 className="w-full bg-white border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-gray-900"
                             />
-                            <p className="text-xs text-gray-400">Recommended: 50–150 meters. Max: 500m.</p>
+                            <p className="text-xs text-gray-400">Recommended: 50–150 meters.</p>
                         </div>
                     </section>
 
                     {/* Section 3: Schedule */}
-                    <section className="space-y-4">
+                    <section className="space-y-6">
                         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-                            Check-in Window (Optional)
+                            Check-in Window
                             <div className="h-px bg-gray-100 flex-1"></div>
                         </h3>
                         
+                        {/* Class Days Selector */}
+                        <div className="space-y-3">
+                            <label className="block text-sm font-semibold text-gray-700">Class Days</label>
+                            <div className="flex flex-wrap gap-2">
+                                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => {
+                                    const isSelected = (formData.days || []).includes(day);
+                                    return (
+                                        <button
+                                            key={day}
+                                            onClick={() => {
+                                                const currentDays = formData.days || [];
+                                                const newDays = isSelected
+                                                    ? currentDays.filter(d => d !== day)
+                                                    : [...currentDays, day];
+                                                setFormData({ ...formData, days: newDays });
+                                            }}
+                                            className={`px-4 py-2 rounded-full text-sm font-bold transition-all duration-200 border ${
+                                                isSelected
+                                                    ? 'bg-[#F43F5E] text-white border-[#F43F5E] shadow-sm'
+                                                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {day}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
                         <div className="grid grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">Start Time</label>
-                                <div className="relative">
-                                    <Clock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                    <input 
-                                        type="time" 
-                                        className="w-full bg-white border border-gray-200 rounded-lg p-2.5 pl-10 focus:ring-2 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E] outline-none text-sm text-gray-900"
-                                        value={formData.startTime}
-                                        onChange={(e) => setFormData({...formData, startTime: e.target.value})}
-                                    />
-                                </div>
+                                <TimePicker 
+                                    label="Start Time"
+                                    value={formData.startTime}
+                                    onChange={(val) => setFormData({...formData, startTime: val})}
+                                />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-semibold text-gray-700">End Time</label>
-                                <div className="relative">
-                                    <Clock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                    <input 
-                                        type="time" 
-                                        className={`w-full bg-white border rounded-lg p-2.5 pl-10 focus:ring-2 outline-none text-sm text-gray-900 ${errors.time ? 'border-red-300 ring-red-100' : 'border-gray-200 focus:ring-[#F43F5E]/20 focus:border-[#F43F5E]'}`}
-                                        value={formData.endTime}
-                                        onChange={(e) => setFormData({...formData, endTime: e.target.value})}
-                                    />
-                                </div>
+                                <TimePicker 
+                                    label="End Time"
+                                    value={formData.endTime}
+                                    onChange={(val) => setFormData({...formData, endTime: val})}
+                                />
                             </div>
                         </div>
                         {errors.time && (
-                            <div className="flex items-center gap-2 text-red-500 text-xs font-medium">
+                            <div className="flex items-center gap-2 text-red-500 text-xs font-medium bg-red-50 p-2 rounded-lg">
                                 <AlertCircle size={14} />
                                 {errors.time}
                             </div>
@@ -341,7 +403,23 @@ export default function CreateClassModal({
                 {/* Footer */}
                 <div className="p-6 border-t border-gray-100 flex gap-4 bg-gray-50/50">
                     <button 
-                        onClick={() => setIsOpen(false)} 
+                        onClick={() => {
+                            setIsOpen(false);
+                            if (!isEditMode) {
+                                setFormData({
+                                    name: '',
+                                    description: '',
+                                    location: '',
+                                    lat: '',
+                                    lng: '',
+                                    radius: 100,
+                                    startTime: '',
+                                    endTime: '',
+                                    days: []
+                                });
+                                setErrors({});
+                            }
+                        }} 
                         disabled={isSubmitting}
                         className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50"
                     >

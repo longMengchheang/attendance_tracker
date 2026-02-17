@@ -248,6 +248,7 @@ export default function DashboardPage() {
                 longitude: selectedClass.longitude,
                 startTime: selectedClass.check_in_start,
                 endTime: selectedClass.check_in_end,
+                days: selectedClass.days,
             }}
             classId={selectedClass.id}
             onSuccess={loadClasses}

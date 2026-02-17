@@ -22,7 +22,9 @@ export async function GET(request: Request, { params }: RouteParams) {
 
     // If teacherId provided, verify ownership
     if (teacherId) {
+      console.log(`[DEBUG] Verifying teacher ownership. ClassId: ${id}, TeacherId: ${teacherId}`);
       const isOwner = await isClassTeacher(id, teacherId);
+      console.log(`[DEBUG] isClassTeacher(id, teacherId): ${isOwner}`);
       if (!isOwner) {
         return NextResponse.json(
           { error: 'Unauthorized' },

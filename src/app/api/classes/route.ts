@@ -53,7 +53,8 @@ export async function POST(request: Request) {
       longitude,
       radius,
       checkInStart,
-      checkInEnd
+      checkInEnd,
+      days
     } = await request.json();
 
     if (!teacherId || !name) {
@@ -72,7 +73,8 @@ export async function POST(request: Request) {
       longitude,
       radius,
       checkInStart,
-      checkInEnd
+      checkInEnd,
+      days
     });
 
     if (error || !newClass) {

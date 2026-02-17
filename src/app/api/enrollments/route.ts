@@ -34,6 +34,7 @@ export async function GET(request: Request) {
         radius: item.classes.radius,
         checkInStart: item.classes.check_in_start,
         checkInEnd: item.classes.check_in_end,
+        days: item.classes.days,
         studentCount: count
       };
     }));

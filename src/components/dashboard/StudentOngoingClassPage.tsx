@@ -49,22 +49,27 @@ export default function StudentOngoingClassPage({ classData }: Props) {
   // Time state for periodic updates
   const [now, setNow] = useState(new Date());
 
-  // Get location on mount if required
+  // Get location on mount and watch for changes if required
   useEffect(() => {
+    let watchId: number;
     if (isLocationRequired) {
-      navigator.geolocation.getCurrentPosition(
+      watchId = navigator.geolocation.watchPosition(
         (position) => {
           setStudentLat(position.coords.latitude);
           setStudentLng(position.coords.longitude);
           setIsLocating(false);
+          setLocationError(null);
         },
-        () => {
-          setLocationError('Unable to get your location.');
+        (err) => {
+          setLocationError('Location access lost or denied.');
           setIsLocating(false);
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 }
       );
     }
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
   }, [isLocationRequired]);
 
   // Check for existing check-in on mount
@@ -104,9 +109,29 @@ export default function StudentOngoingClassPage({ classData }: Props) {
     };
 
     checkExistingAttendance();
+    checkExistingAttendance();
   }, [user?.id, classData.id]);
 
-  // Update time every 10 seconds to keep UI fresh
+  // Calculate distance and range whenever location or class data changes
+  useEffect(() => {
+    if (studentLat !== null && studentLng !== null && classData.latitude && classData.longitude) {
+      const dist = haversineDistance(
+        studentLat,
+        studentLng,
+        parseFloat(classData.latitude),
+        parseFloat(classData.longitude)
+      );
+      setDistance(dist);
+      
+      const radius = classData.radius || 100;
+      setIsInRange(dist <= radius);
+    } else if (!classData.latitude || !classData.longitude) {
+        // If class has no location set, always in range
+        setIsInRange(true);
+        setDistance(null);
+    }
+  }, [studentLat, studentLng, classData.latitude, classData.longitude, classData.radius]);
+
 
   // Update time every 10 seconds to keep UI fresh
   useEffect(() => {
@@ -210,6 +235,12 @@ export default function StudentOngoingClassPage({ classData }: Props) {
   const handleCheckOut = async () => {
     if (!attendanceId) return;
 
+    // Check location requirement
+    if (isLocationRequired && (!isInRange || studentLat === null || studentLng === null)) {
+      setError('You must be within the class check-in radius to clock out.');
+      return;
+    }
+
     if (!canCheckOut) {
       // Re-trigger visual feedback
       if (checkOutMessage) {
@@ -311,8 +342,8 @@ export default function StudentOngoingClassPage({ classData }: Props) {
           </div>
         )}
 
-        {/* Status Banner - Ready to Clock In */}
-        {!isLocating && !locationError && !isCheckedIn && !attendanceId && (
+        {/* Status Banner - Ready to Clock In OR Ready to Clock Out */}
+        {!isLocating && !locationError && ((!isCheckedIn && !attendanceId) || (isCheckedIn && canCheckOut)) && (
           <div className={`px-5 py-4 flex items-center gap-4 ${
             !isLocationRequired
               ? 'bg-blue-50/70 border-b border-blue-100/80' // No location required
@@ -326,7 +357,9 @@ export default function StudentOngoingClassPage({ classData }: Props) {
                   <CheckCircle2 size={20} className="text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-blue-700 font-semibold">Ready to clock in</p>
+                  <p className="text-blue-700 font-semibold">
+                    {isCheckedIn ? 'Ready to clock out' : 'Ready to clock in'}
+                  </p>
                   <p className="text-blue-600/80 text-sm">Location check not required for this class</p>
                 </div>
               </>
@@ -337,7 +370,9 @@ export default function StudentOngoingClassPage({ classData }: Props) {
                 </div>
                 <div>
                   <p className="text-emerald-700 font-semibold">You're in range</p>
-                  <p className="text-emerald-600/80 text-sm">Ready to clock in ({distance ? `${Math.round(distance)}m away` : ''})</p>
+                  <p className="text-emerald-600/80 text-sm">
+                    {isCheckedIn ? 'Ready to clock out' : 'Ready to clock in'} ({distance ? `${Math.round(distance)}m away` : ''})
+                  </p>
                 </div>
               </>
             ) : (
@@ -347,7 +382,9 @@ export default function StudentOngoingClassPage({ classData }: Props) {
                 </div>
                 <div className="flex-1">
                   <p className="text-amber-700 font-semibold">Out of range</p>
-                  <p className="text-amber-600/80 text-sm">Move closer to clock in ({distance ? `~${Math.round(distance)}m` : '?'} away)</p>
+                  <p className="text-amber-600/80 text-sm">
+                    Move closer to {isCheckedIn ? 'clock out' : 'clock in'} ({distance ? `~${Math.round(distance)}m` : '?'} away)
+                  </p>
                 </div>
                 <button onClick={handleRefreshLocation} className="text-amber-600 hover:text-amber-700 p-1">
                   <Navigation size={14} />
@@ -377,7 +414,9 @@ export default function StudentOngoingClassPage({ classData }: Props) {
               <CheckCircle2 size={20} className="text-white" />
             </div>
             <div className="flex-1">
-              <p className="text-emerald-700 font-semibold">Clocked in at {checkInTime}</p>
+              <p className="text-emerald-700 font-semibold">
+                {canCheckOut ? 'Please clock out within 15 minutes' : `Clocked in at ${checkInTime}`}
+              </p>
               {attendanceStatus && (
                 <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold capitalize ${getStatusBadgeStyle()}`}>
                   {attendanceStatus}
@@ -491,26 +530,40 @@ export default function StudentOngoingClassPage({ classData }: Props) {
 
           {/* Check Out Button */}
           {isCheckedIn && (
-            <button
-              onClick={handleCheckOut}
-              disabled={isSubmitting || !canCheckOut}
-              className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
-                canCheckOut
-                  ? 'border-2 border-gray-200 text-gray-600 hover:bg-white hover:border-gray-300 bg-white disabled:opacity-50'
-                  : 'border-2 border-gray-100 text-gray-400 bg-gray-50 cursor-not-allowed'
-              }`}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Clocking out...
-                </>
-              ) : canCheckOut ? (
-                'Clock Out'
-              ) : (
-                'Clock-out available after class ends'
+            <div>
+              <button
+                onClick={handleCheckOut}
+                disabled={
+                    isSubmitting || 
+                    !canCheckOut ||
+                    (isLocationRequired && (!isInRange || isLocating || !!locationError))
+                }
+                className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
+                  canCheckOut && (!isLocationRequired || isInRange)
+                    ? 'border-2 border-gray-200 text-gray-600 hover:bg-white hover:border-gray-300 bg-white disabled:opacity-50'
+                    : 'border-2 border-gray-100 text-gray-400 bg-gray-50 cursor-not-allowed'
+                }`}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Clocking out...
+                  </>
+                ) : !canCheckOut ? (
+                  'Clock-out available after class ends'
+                ) : isLocationRequired && !isInRange ? (
+                  'Move closer to clock out'
+                ) : (
+                  'Clock Out'
+                )}
+              </button>
+               {/* Location warning for clock out */}
+               {isCheckedIn && isLocationRequired && !isInRange && !isLocating && !locationError && canCheckOut && (
+                <p className="text-xs text-gray-400 text-center mt-2.5">
+                  Move within {classData.radius || 100}m of the class location to enable clock-out
+                </p>
               )}
-            </button>
+            </div>
           )}
         </div>
       </div>

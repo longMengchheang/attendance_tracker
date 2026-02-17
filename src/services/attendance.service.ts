@@ -552,3 +552,139 @@ export async function getStudentOverallStats(studentId: string): Promise<{
         absent: absentCount
     };
 }
+
+
+/**
+ * Get class attendance summary for a specific month
+ * Aggregates stats per student
+ */
+export async function getClassAttendanceSummary(
+  classId: string,
+  month: number,
+  year: number
+): Promise<{
+  summary: {
+    present: number;
+    late: number;
+    absent: number;
+  };
+  students: {
+    studentId: string;
+    name: string;
+    present: number;
+    late: number;
+    absent: number;
+    score: number;
+  }[];
+}> {
+  const startDate = new Date(Date.UTC(year, month, 1));
+  const endDate = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59)); // Last day of month
+
+  // 1. Get all students enrolled in the class
+  const { data: enrollments, error: enrollError } = await supabase
+    .from('enrollments')
+    .select(`
+      student_id,
+      enrolled_at,
+      student:student_id (
+        id,
+        name
+      )
+    `)
+    .eq('class_id', classId);
+
+  if (enrollError || !enrollments) {
+    throw new Error('Failed to fetch enrollments');
+  }
+
+  // 2. Get all attendance records for this class in the month range
+  const { data: records, error: recordsError } = await supabase
+    .from('attendance')
+    .select('*')
+    .eq('class_id', classId)
+    .gte('date', startDate.toISOString().split('T')[0])
+    .lte('date', endDate.toISOString().split('T')[0]);
+
+  if (recordsError) {
+    throw new Error('Failed to fetch attendance records');
+  }
+
+  // 3. Identify unique session dates
+  // Convert timestamps/dates to YYYY-MM-DD
+  const sessionDates = new Set<string>();
+  if (records) {
+    records.forEach(r => sessionDates.add(r.date));
+  }
+  const sessions = Array.from(sessionDates).sort();
+
+  // 4. Aggregate per student
+  let totalPresent = 0;
+  let totalLate = 0;
+  let totalAbsent = 0;
+
+  const studentStats = enrollments.map((enrollment: any) => {
+    const student = enrollment.student;
+    
+    // Filter sessions that occurred AFTER the student enrolled
+    // enrollment.enrolled_at is a timestamp
+    const enrolledDate = new Date(enrollment.enrolled_at).toISOString().split('T')[0];
+    const validSessions = sessions.filter(date => date >= enrolledDate);
+
+    // Get student's records
+    const studentRecords = records?.filter(r => r.student_id === student.id) || [];
+    
+    let present = 0;
+    let late = 0;
+    let checkInCount = 0;
+
+    studentRecords.forEach(r => {
+      if (r.status === 'present') present++;
+      if (r.status === 'late') late++;
+      checkInCount++;
+    });
+
+    // Absent is implied: Valid Sessions - CheckIn Count
+    // But we only count *valid* sessions for this student based on enrollment date
+    // Note: checkInCount only includes records in the month range due to query filter
+    // So logic holds: Total Sessions (in month) - Present/Late (in month) = Absent
+    
+    // Edge Case: If student record exists for a date NOT in validSessions (e.g. data anomaly), 
+    // it counts as present but session count might be off.
+    // Using filtered sessions is safer.
+    
+    // Re-calculate present/late based ONLY on valid sessions to be consistent
+    present = 0;
+    late = 0;
+    studentRecords.forEach(r => {
+        if (validSessions.includes(r.date)) {
+             if (r.status === 'present') present++;
+             if (r.status === 'late') late++;
+        }
+    });
+
+    const absent = Math.max(0, validSessions.length - (present + late));
+    const score = (present * 1.0) + (late * 0.5);
+
+    totalPresent += present;
+    totalLate += late;
+    totalAbsent += absent;
+
+    return {
+      studentId: student.id,
+      name: student.name || 'Unknown',
+      present,
+      late,
+      absent,
+      score
+    };
+  });
+
+  return {
+    summary: {
+      present: totalPresent,
+      late: totalLate,
+      absent: totalAbsent
+    },
+    students: studentStats.sort((a, b) => b.score - a.score) // Sort by score desc
+  };
+}

@@ -56,6 +56,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedSession = typeof window !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null;
     
     setUser(storedUser);
+
+    // Attempt to recover email if missing from stored user
+    if (storedUser && !storedUser.email && storedSession) {
+      try {
+        const parsedSession = JSON.parse(storedSession);
+        if (parsedSession?.user?.email) {
+          const updatedUser = { ...storedUser, email: parsedSession.user.email };
+          console.log('Recovering missing email from session:', updatedUser);
+          setUser(updatedUser);
+          setCurrentUser(updatedUser);
+        }
+      } catch (e) {
+        console.error('Error parsing stored session for email recovery:', e);
+      }
+    }
     
     // Set up Supabase auth listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -79,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           const loggedInUser: Users = {
             id: session.user.id,
+            email: session.user.email,
             name: name,
             role: role,
             created_at: new Date().toISOString(),
@@ -164,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const loggedInUser: Users = {
             id: data.user.id,
+            email: data.user.email,
             name: name,
             role: role,
             created_at: new Date().toISOString(),
@@ -216,16 +233,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Update Password - sets new password for authenticated user
   const updatePassword = async (password: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      console.log('Attempting to update password...');
       const { error } = await supabase.auth.updateUser({
         password: password
       });
 
       if (error) {
+        console.error('Error updating password:', error);
         return { success: false, error: error.message };
       }
 
+      console.log('Password updated successfully');
       return { success: true };
     } catch (error) {
+      console.error('Unexpected error updating password:', error);
       return { success: false, error: 'Network error. Please try again.' };
     }
   };
@@ -253,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.session && data.user) {
          const loggedInUser: Users = {
             id: data.user.id,
+            email: data.user.email,
             name: data.user.name || 'User',
             role: (data.user.role as 'student' | 'teacher') || 'student',
             created_at: new Date().toISOString(),

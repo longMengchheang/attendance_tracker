@@ -64,14 +64,27 @@ export default function TeacherOngoingClassPage({ classData }: Props) {
 
   const getStatusColor = (student: OngoingStudent) => {
     if (student.checkOutTime) return 'bg-blue-500';
-    if (student.checkInTime) return 'bg-emerald-500';
+    if (student.checkInTime) {
+      if (student.status === 'late') return 'bg-amber-500';
+      return 'bg-emerald-500';
+    }
     return 'bg-gray-300';
   };
 
   const getStatusBadge = (student: OngoingStudent) => {
     if (student.checkOutTime) return 'bg-blue-100 text-blue-700';
-    if (student.checkInTime) return 'bg-emerald-100 text-emerald-700';
+    if (student.checkInTime) {
+      if (student.status === 'late') return 'bg-amber-100 text-amber-700';
+      return 'bg-emerald-100 text-emerald-700';
+    } 
     return 'bg-rose-100 text-rose-700';
+  };
+
+  const getHoverStatus = (student: OngoingStudent) => {
+    if (student.checkOutTime) return 'group-hover:text-blue-600'; // Clocked Out
+    if (!student.checkInTime) return 'group-hover:text-rose-600'; // Absent
+    if (student.status === 'late') return 'group-hover:text-amber-600'; // Late
+    return 'group-hover:text-emerald-600'; // Present
   };
 
   const formatTime = (timeStr: string | null) => {
@@ -185,44 +198,47 @@ export default function TeacherOngoingClassPage({ classData }: Props) {
           <div className="text-center py-20">
             <p className="text-gray-400 font-medium">No students found.</p>
           </div>
-        ) : filteredStudents.map((student) => (
-          <div
-            key={student.studentId}
-            className="group bg-white border border-gray-100 rounded-xl flex items-center p-3 hover:shadow-md hover:border-[#F43F5E]/20 transition-all duration-200"
-          >
-            {/* Status Dot */}
-            <div className="pl-2 pr-4">
-              <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(student)}`}></div>
+        ) : filteredStudents.map((student) => {
+          const hoverTextStyle = getHoverStatus(student);
+          return (
+            <div
+              key={student.studentId}
+              className="group bg-white border border-gray-100 rounded-xl flex items-center p-3 hover:shadow-md transition-all duration-200"
+            >
+              {/* Status Dot */}
+              <div className="pl-2 pr-4">
+                <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(student)}`}></div>
+              </div>
+  
+              {/* Avatar */}
+              <div className="w-10 h-10 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center font-bold text-sm shadow-inner shrink-0">
+                {student.studentName.charAt(0).toUpperCase()}
+              </div>
+  
+              {/* Info */}
+              <div className="flex flex-col ml-4 flex-1">
+                <span className={`font-bold text-gray-900 transition-colors ${hoverTextStyle}`}>{student.studentName}</span>
+                <span className="text-xs font-medium text-gray-400 flex items-center gap-1">
+                  {!student.checkInTime ? (
+                    'Not checked in'
+                  ) : (
+                    <>
+                      In at {formatTime(student.checkInTime)}
+                      {student.checkOutTime && (
+                         <> • Out at {formatTime(student.checkOutTime)}</>
+                      )}
+                    </>
+                  )}
+                </span>
+              </div>
+  
+              {/* Status Badge */}
+              <div className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${getStatusBadge(student)}`}>
+                {student.checkOutTime ? 'Clocked Out' : (student.checkInTime ? 'Clocked In' : 'Absent')}
+              </div>
             </div>
-
-            {/* Avatar */}
-            <div className="w-10 h-10 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center font-bold text-sm shadow-inner shrink-0">
-              {student.studentName.charAt(0).toUpperCase()}
-            </div>
-
-            {/* Info */}
-            <div className="flex flex-col ml-4 flex-1">
-              <span className="font-bold text-gray-900 group-hover:text-[#F43F5E] transition-colors">{student.studentName}</span>
-              <span className="text-xs font-medium text-gray-400 flex items-center gap-1">
-                {!student.checkInTime ? (
-                  'Not checked in'
-                ) : (
-                  <>
-                    In at {formatTime(student.checkInTime)}
-                    {student.checkOutTime && (
-                       <> • Out at {formatTime(student.checkOutTime)}</>
-                    )}
-                  </>
-                )}
-              </span>
-            </div>
-
-            {/* Status Badge */}
-            <div className={`px-3 py-1 rounded-full text-xs font-bold capitalize ${getStatusBadge(student)}`}>
-              {student.checkOutTime ? 'Clocked Out' : (student.checkInTime ? 'Clocked In' : 'Absent')}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {error && (

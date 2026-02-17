@@ -44,7 +44,8 @@ export async function PUT(request: Request, { params }: RouteParams) {
       longitude,
       radius,
       checkInStart,
-      checkInEnd
+      checkInEnd,
+      days
     } = await request.json();
 
     if (!teacherId) {
@@ -73,6 +74,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
     if (radius !== undefined) updates.radius = radius;
     if (checkInStart !== undefined) updates.check_in_start = checkInStart;
     if (checkInEnd !== undefined) updates.check_in_end = checkInEnd;
+    if (days !== undefined) updates.days = days;
 
     const updatedClass = await updateClass(id, updates);
 

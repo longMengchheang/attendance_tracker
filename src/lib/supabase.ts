@@ -31,6 +31,7 @@ export interface Class {
   radius: number;
   check_in_start: string | null;
   check_in_end: string | null;
+  days: string[] | null;
   created_at: string;
 }
 

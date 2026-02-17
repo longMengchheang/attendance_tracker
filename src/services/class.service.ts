@@ -24,6 +24,7 @@ export async function createClass(data: {
   radius?: number;
   checkInStart?: string;
   checkInEnd?: string;
+  days?: string[];
 }): Promise<{ data: Class | null; error: any }> {
   const code = generateClassCode();
 
@@ -40,6 +41,7 @@ export async function createClass(data: {
       radius: data.radius || 100,
       check_in_start: data.checkInStart || null,
       check_in_end: data.checkInEnd || null,
+      days: data.days || [],
     })
     .select()
     .single();
@@ -212,12 +214,16 @@ export async function getOngoingClass(userId: string, role: string): Promise<Cla
   const now = new Date().toISOString();
   // Check for classes that ended up to 15 minutes ago
   const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  
+  const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const today = daysOfWeek[new Date().getDay()];
 
   if (role === 'teacher') {
     const { data, error } = await supabase
       .from('classes')
       .select('*')
       .eq('teacher_id', userId)
+      .contains('days', [today])
       .lte('check_in_start', now)
       .gte('check_in_end', fifteenMinutesAgo) // Allow seeing class for 15 mins after it ends
       .limit(1)
@@ -241,6 +247,7 @@ export async function getOngoingClass(userId: string, role: string): Promise<Cla
     .from('classes')
     .select('*')
     .in('id', classIds)
+    .contains('days', [today])
     .lte('check_in_start', now)
     .gte('check_in_end', fifteenMinutesAgo) // Allow seeing class for 15 mins after it ends
     .limit(1)

@@ -195,6 +195,7 @@ export default function StudentDashboardPage() {
           students: selectedClass.studentCount,
           check_in_start: selectedClass.checkInStart,
           check_in_end: selectedClass.checkInEnd,
+          days: selectedClass.days,
         } : null} 
       />
     </div>

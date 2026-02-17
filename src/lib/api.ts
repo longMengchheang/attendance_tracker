@@ -17,6 +17,7 @@ export interface Class {
   radius?: number | null;
   check_in_start?: string | null;
   check_in_end?: string | null;
+  days?: string[] | null;
 }
 
 export interface Enrollment {
@@ -34,6 +35,7 @@ export interface Enrollment {
   radius: number | null;
   checkInStart: string | null;
   checkInEnd: string | null;
+  days: string[] | null;
   studentCount: number;
 }
 
@@ -91,6 +93,7 @@ export async function createClass(
     radius?: number;
     checkInStart?: string;
     checkInEnd?: string;
+    days?: string[];
   }
 ): Promise<Class> {
   const res = await fetch('/api/classes', {
@@ -106,6 +109,7 @@ export async function createClass(
       radius: options?.radius,
       checkInStart: options?.checkInStart,
       checkInEnd: options?.checkInEnd,
+      days: options?.days,
     }),
   });
   
@@ -130,6 +134,7 @@ export async function updateClass(
     radius?: number;
     checkInStart?: string;
     checkInEnd?: string;
+    days?: string[];
   }
 ): Promise<Class> {
   const res = await fetch(`/api/classes/${classId}`, {
@@ -168,7 +173,7 @@ export async function fetchClassStudents(
   const data = await res.json();
   
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to fetch students');
+    throw new Error(`${data.error || 'Failed to fetch students'} (Class: ${classId}, Requester: ${requesterId}, Role: ${role})`);
   }
   
   return data.students;
@@ -361,4 +366,33 @@ export async function fetchStudentStats(studentId: string): Promise<{
     }
 
     return data.stats;
+}
+
+export async function fetchClassAttendanceSummary(
+  classId: string,
+  month: number, // 0-11
+  year: number
+): Promise<{
+  summary: {
+    present: number;
+    late: number;
+    absent: number;
+  };
+  students: {
+    studentId: string;
+    name: string;
+    present: number;
+    late: number;
+    absent: number;
+    score: number;
+  }[];
+}> {
+  const res = await fetch(`/api/attendance/class-summary?classId=${classId}&month=${month}&year=${year}`);
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to fetch class attendance summary');
+  }
+
+  return data;
 }

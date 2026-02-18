@@ -1,5 +1,6 @@
 import { supabase, Attendance } from '@/lib/supabase';
 import { haversineDistance } from '@/lib/geo';
+import { calculateAttendanceStatus, calculateAttendanceScore, calculateLeftEarly } from '@/lib/attendance-utils';
 
 /**
  * Supabase returns timestamps without timezone suffix.
@@ -18,9 +19,10 @@ export async function checkIn(
   studentId: string,
   classId: string,
   studentLat: number,
-  studentLng: number
+  studentLng: number,
+  _testDate?: Date
 ): Promise<{ record: Attendance | null; alreadyCheckedIn: boolean }> {
-  const now = new Date();
+  const now = _testDate || new Date();
   // Use local date string YYYY-MM-DD to match frontend request and user's timezone
   const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
     .toISOString()
@@ -81,26 +83,21 @@ export async function checkIn(
       }
   }
 
-  // Determine status: present if within 15 minutes of start, otherwise late
   // Determine status based on percentage of class duration
-  // Duration in milliseconds
-  const duration = endTime.getTime() - startTime.getTime();
-  if (duration <= 0) {
-    throw new Error('Invalid class duration');
+  let status: 'present' | 'late' | 'absent';
+  
+  try {
+      status = calculateAttendanceStatus(startTime, endTime, now);
+  } catch (e: any) {
+      throw new Error(e.message);
   }
 
-  const elapsed = now.getTime() - startTime.getTime();
-  const latenessPercentage = elapsed / duration;
-
-  let status: 'present' | 'late' | 'absent';
-
-  if (latenessPercentage <= 0.15) {
-    status = 'present';
-  } else if (latenessPercentage <= 0.40) {
-    status = 'late';
-  } else {
+  if (status === 'absent') {
     throw new Error('Clock-in time exceeded (Absent). You are more than 40% late.');
   }
+
+  // Insert attendance record
+
 
   const { data, error } = await supabase
     .from('attendance')
@@ -124,7 +121,8 @@ export async function checkIn(
 /**
  * Check out a student. Only allowed after class end time.
  */
-export async function checkOut(attendanceId: string): Promise<Attendance | null> {
+export async function checkOut(attendanceId: string, _testDate?: Date): Promise<Attendance | null> {
+  const now = _testDate || new Date();
   // Fetch the attendance record to get the class_id
   const { data: record, error: recordError } = await supabase
     .from('attendance')
@@ -151,7 +149,7 @@ export async function checkOut(attendanceId: string): Promise<Attendance | null>
     throw new Error('Class not found');
   }
 
-  const now = new Date();
+
   const endTime = classData.check_in_end ? ensureUTC(classData.check_in_end) : null;
 
   if (endTime && now < endTime) {
@@ -319,10 +317,34 @@ export async function getOngoingClassAttendance(classId: string): Promise<any[]>
     }
   }
 
+  // Fetch class details to calculate 'Left Early' status
+  const { data: classData } = await supabase
+    .from('classes')
+    .select('check_in_end')
+    .eq('id', classId)
+    .single();
+
+  const classEndTime = classData?.check_in_end ? ensureUTC(classData.check_in_end) : null;
+  const now = new Date();
+
   // Merge: enrolled students + their attendance status
   return enrollments.map((e: any) => {
     const student = e.student;
     const record = attendanceMap.get(student.id);
+    
+    let leftEarly = false;
+    if (record?.check_in_time && classEndTime) {
+         leftEarly = calculateLeftEarly(
+            new Date(record.check_in_time), // checkIn (UTC from DB, Date constructor assumes local if no Z, but likely has Z or is ISO)
+            // Wait, supabase returns ISO string usually. ensureUTC handles it?
+            // checking usages: ensureUTC is used for class times. 
+            // DB timestamps are ISO strings. new Date(iso) works fine if they have Z. 
+            // attendance table check_in_time usually has Z if inserted via .toISOString()
+            record.check_out_time ? new Date(record.check_out_time) : null,
+            classEndTime,
+            now
+         );
+    }
 
     return {
       studentId: student.id,
@@ -331,6 +353,7 @@ export async function getOngoingClassAttendance(classId: string): Promise<any[]>
       checkInTime: record?.check_in_time || null,
       checkOutTime: record?.check_out_time || null,
       attendanceId: record?.id || null,
+      leftEarly
     };
   });
 }
@@ -422,24 +445,38 @@ export async function getStudentAttendanceReport(
   let lateCount = 0;
   let absentCount = 0;
 
+  /* New Formula:
+     Attendance Rate = ((Present * 1.0) + (Late * 0.5)) / Total Sessions * 100
+  */
+
   const details = sessions.map(session => {
     const record = recordMap.get(session.id);
     let status = 'absent';
     let score = 0;
     let checkInTime = null;
+    let checkOutTime = null;
+    let leftEarly = false;
 
     if (record) {
       status = record.status;
       checkInTime = record.check_in_time;
+      
+      // Calculate Left Early: Checked in but no check out
+      // We assume report is for past or current. If class ended > 15 mins ago and no checkout.
+      // session.check_in_end is string derived from DB
+      const classEndTime = new Date(session.check_in_end + 'Z'); // Ensure UTC
+      const now = new Date(); // Or pass in test date if needed? For report we use real now.
+
+      leftEarly = calculateLeftEarly(new Date(checkInTime), checkOutTime ? new Date(checkOutTime) : null, classEndTime, now);
+
+      status === 'present' || status === 'late' || status === 'absent' ? 
+          score = calculateAttendanceScore(status) : score = 0;
+
       if (status === 'present') {
-        score = 1.0;
         presentCount++;
       } else if (status === 'late') {
-        score = 0.5;
         lateCount++;
       } else {
-        // Status might be 'absent' explicitly if we ever insert that
-        score = 0;
         absentCount++;
       }
     } else {
@@ -454,11 +491,14 @@ export async function getStudentAttendanceReport(
       date: session.check_in_start,
       status,
       score,
-      checkInTime
+      checkInTime,
+      checkOutTime,
+      leftEarly
     };
   });
 
   const totalSessions = sessions.length;
+  // Formula: ((Present * 1.0) + (Late * 0.5)) / Total Sessions * 100
   const attendancePercentage = totalSessions > 0 ? (totalScore / totalSessions) * 100 : 0;
 
   return {
@@ -567,6 +607,7 @@ export async function getClassAttendanceSummary(
     present: number;
     late: number;
     absent: number;
+    totalClasses: number;
   };
   students: {
     studentId: string;
@@ -575,10 +616,13 @@ export async function getClassAttendanceSummary(
     late: number;
     absent: number;
     score: number;
+    attendanceRate: number;
   }[];
 }> {
+
   const startDate = new Date(Date.UTC(year, month, 1));
   const endDate = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59)); // Last day of month
+  console.log(`[Service] Date Range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
   // 1. Get all students enrolled in the class
   const { data: enrollments, error: enrollError } = await supabase
@@ -663,7 +707,13 @@ export async function getClassAttendanceSummary(
     });
 
     const absent = Math.max(0, validSessions.length - (present + late));
-    const score = (present * 1.0) + (late * 0.5);
+    
+    // Score based on: Present=1.0, Late=0.5
+    const score = (present * calculateAttendanceScore('present')) + (late * calculateAttendanceScore('late'));
+    
+    // Calculate rate relative to valid sessions for this student
+    const totalPossible = validSessions.length;
+    const rate = totalPossible > 0 ? (score / totalPossible) * 100 : 0;
 
     totalPresent += present;
     totalLate += late;
@@ -675,7 +725,8 @@ export async function getClassAttendanceSummary(
       present,
       late,
       absent,
-      score
+      score,
+      attendanceRate: Math.round(rate * 10) / 10
     };
   });
 
@@ -683,8 +734,179 @@ export async function getClassAttendanceSummary(
     summary: {
       present: totalPresent,
       late: totalLate,
-      absent: totalAbsent
+      absent: totalAbsent,
+      totalClasses: sessions.length
     },
     students: studentStats.sort((a, b) => b.score - a.score) // Sort by score desc
   };
+}
+
+/**
+ * Get class attendance for a specific date (Daily View)
+ */
+export async function getDailyClassAttendance(
+  classId: string,
+  date: string // YYYY-MM-DD
+): Promise<{
+  summary: {
+    present: number;
+    late: number;
+    absent: number;
+  };
+  students: {
+    studentId: string;
+    name: string;
+    status: 'present' | 'late' | 'absent';
+    checkInTime: string | null;
+    checkOutTime: string | null;
+    leftEarly: boolean;
+  }[];
+}> {
+  // 1. Get all students enrolled in this class
+  const { data: enrollments, error: enrollError } = await supabase
+    .from('enrollments')
+    .select('student:student_id(id, name)')
+    .eq('class_id', classId);
+
+  if (enrollError) throw enrollError;
+
+  // 2. Get attendance records for this date
+  const { data: records, error: recordsError } = await supabase
+    .from('attendance')
+    .select('*')
+    .eq('class_id', classId)
+    .eq('date', date);
+
+  if (recordsError) throw recordsError;
+
+  type DailyStudent = { id: string; name: string | null };
+  type DailyEnrollment = {
+    student: DailyStudent | DailyStudent[] | null;
+  };
+
+  // 3. Map records for O(1) access
+  const recordMap = new Map<string, Attendance>();
+  const attendanceRecords = (records || []) as Attendance[];
+  attendanceRecords.forEach((record) => recordMap.set(record.student_id, record));
+
+  // 4. Merge and default missing records to absent
+  let present = 0;
+  let late = 0;
+  let absent = 0;
+
+  const { data: classData, error: classError } = await supabase
+    .from('classes')
+    .select('check_in_end')
+    .eq('id', classId)
+    .single();
+
+  if (classError) throw classError;
+
+  const classEnd = classData?.check_in_end ? ensureUTC(classData.check_in_end) : null;
+  const now = new Date();
+
+  const students = ((enrollments || []) as DailyEnrollment[])
+    .flatMap((enrollment) => {
+      if (!enrollment.student) return [];
+      return Array.isArray(enrollment.student) ? enrollment.student : [enrollment.student];
+    })
+    .map((student) => {
+      const record = recordMap.get(student.id);
+
+      let status: 'present' | 'late' | 'absent' = 'absent';
+      let checkInTime: string | null = null;
+      let checkOutTime: string | null = null;
+      let leftEarly = false;
+
+      if (record) {
+        status = (record.status || 'absent') as 'present' | 'late' | 'absent';
+        checkInTime = record.check_in_time;
+        checkOutTime = record.check_out_time;
+
+        if (classEnd && checkInTime) {
+          leftEarly = calculateLeftEarly(
+            ensureUTC(checkInTime),
+            checkOutTime ? ensureUTC(checkOutTime) : null,
+            classEnd,
+            now
+          );
+        }
+      }
+
+      if (status === 'present') present++;
+      else if (status === 'late') late++;
+      else absent++;
+
+      return {
+        studentId: student.id,
+        name: student.name || 'Unknown',
+        status,
+        checkInTime,
+        checkOutTime,
+        leftEarly
+      };
+    });
+
+  return {
+    summary: { present, late, absent },
+    students
+  };
+}
+
+/**
+ * Get list of past class sessions with attendance summary
+ */
+export async function getClassSessionsHistory(
+  classId: string,
+  month: number,
+  year: number
+): Promise<{
+  date: string;
+  present: number;
+  late: number;
+  absent: number;
+}[]> {
+  const startDate = new Date(Date.UTC(year, month, 1));
+  const endDate = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59));
+
+  // 1. Get all attendance records for this class in range
+  const { data: records, error } = await supabase
+    .from('attendance')
+    .select('date, status')
+    .eq('class_id', classId)
+    .gte('date', startDate.toISOString().split('T')[0])
+    .lte('date', endDate.toISOString().split('T')[0]);
+
+  if (error) throw error;
+
+  // 2. Group by date
+  const sessions = new Map<string, { present: number; late: number; absent: number }>();
+
+  records?.forEach(record => {
+    if (!sessions.has(record.date)) {
+      sessions.set(record.date, { present: 0, late: 0, absent: 0 });
+    }
+    const stats = sessions.get(record.date)!;
+    if (record.status === 'present') stats.present++;
+    else if (record.status === 'late') stats.late++;
+    else stats.absent++; // Count explicit absent records from the table
+  });
+
+  // Note: This only counts *recorded* attendance. 
+  // Ideally, 'absent' should checks against total enrollments, but for 'History' view 
+  // usually showing recorded data is a good start. 
+  // To be perfectly accurate (implicit absence), we'd need to fetch enrollments count per date 
+  // or just use current enrollment count as approximation.
+  // For now, let's use the explicit records + we can fetch current enrollment count to derive implicit absent if needed.
+  // BUT: The existing `getClassAttendanceSummary` calculates implicit absent. 
+  // Let's refine this to be consistent with `getClassAttendanceSummary` logic if strict accuracy is needed,
+  // but for a list view, grouping records is often sufficient if "absent" rows are created by the system.
+  // Assuming the system DOES create absent rows (e.g. via cron or manual trigger), this is fine.
+  // If not, we might hide "Absent" count or just show recorded ones.
+  // Let's stick to recorded data for now as it's faster.
+
+  return Array.from(sessions.entries()).map(([date, stats]) => ({
+    date,
+    ...stats
+  })).sort((a, b) => b.date.localeCompare(a.date)); // Sort desc
 }

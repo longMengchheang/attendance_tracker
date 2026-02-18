@@ -51,3 +51,39 @@ export async function GET(request: Request) {
     );
   }
 }
+
+// DELETE /api/enrollments - Delete an enrollment
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const studentId = searchParams.get('studentId');
+    const classId = searchParams.get('classId');
+
+    if (!studentId || !classId) {
+      return NextResponse.json(
+        { error: 'Student ID and Class ID are required' },
+        { status: 400 }
+      );
+    }
+
+    // Import dynamically to avoid circular dependencies if any
+    const { deleteEnrollment } = await import('@/services/enrollment.service');
+    
+    const success = await deleteEnrollment(studentId, classId);
+
+    if (!success) {
+      return NextResponse.json(
+        { error: 'Failed to delete enrollment' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting enrollment:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}

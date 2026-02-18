@@ -8,8 +8,8 @@ import { useAuth } from '../context/AuthContext';
 const sidebarItems = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Ongoing Class', href: '/dashboard/ongoing-class', icon: Clock },
-  { name: 'Student', href: '/dashboard/student', icon: Users },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+
 ];
 
 export default function Sidebar() {

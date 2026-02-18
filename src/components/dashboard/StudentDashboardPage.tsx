@@ -94,7 +94,7 @@ export default function StudentDashboardPage() {
     <div className="space-y-12">
       {/* Greeting Section */}
       <div>
-        <h1 className="text-3xl font-bold text-[#111827]">Welcome back, {user?.name || 'Student'} 👋</h1>
+        <h1 className="text-3xl font-bold text-[#111827]">Welcome back, {user?.name || 'Student'}</h1>
         <p className="text-gray-500 mt-2">Here's an overview of your enrolled classes</p>
       </div>
 
@@ -137,7 +137,7 @@ export default function StudentDashboardPage() {
               {enrollments.map((enrollment) => (
               <div 
                   key={enrollment.enrollmentId} 
-                  className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative group hover:shadow-md transition-all duration-300"
+                  className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative group hover:shadow-md hover:scale-[1.02] transition-all duration-300"
               >
                   {/* Header: Name and View Button */}
                   <div className="flex justify-between items-start mb-2">

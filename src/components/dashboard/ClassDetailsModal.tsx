@@ -1,9 +1,12 @@
 // ... (imports remain)
 import { useState, useEffect } from 'react';
-import { X, MapPin, Clock, Users, Calendar, Filter, ChevronDown, CheckCircle2, XCircle, AlertCircle, Search, UserCircle, Loader2 } from 'lucide-react';
+import { X, MapPin, Clock, Users, Calendar, Filter, ChevronDown, CheckCircle2, XCircle, AlertCircle, Search, UserCircle, Loader2, Download } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { fetchStudentAttendanceReport, fetchClassStudents, fetchClassAttendanceSummary, Student } from '@/lib/api';
+
+import { fetchStudentAttendanceReport, fetchClassStudents, fetchClassAttendanceSummary, fetchDailyClassAttendance, removeStudentFromClass, fetchClassSessionsHistory, Student } from '@/lib/api';
 import StudentSummaryModal from './StudentSummaryModal';
+import { toast } from 'sonner';
+
 
 // ... (ClassData interface and formatTime helper remain)
 interface ClassData {
@@ -48,14 +51,45 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
   // Date state for report
   const today = new Date();
   const [selectedMonth, setSelectedMonth] = useState(today.getMonth());
+
   const [selectedYear, setSelectedYear] = useState(today.getFullYear());
+
+  // Generate years list starting from 2026 up to current year
+  const startYear = 2026;
+  const currentYear = today.getFullYear();
+  const years = Array.from({ length: Math.max(1, currentYear - startYear + 1) }, (_, i) => startYear + i);
 
   // Data state
   const [attendanceReport, setAttendanceReport] = useState<any>(null);
-  const [studentHistoryReport, setStudentHistoryReport] = useState<any>(null);
-  const [viewingStudentHistory, setViewingStudentHistory] = useState<string | null>(null);
   const [classmates, setClassmates] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<any>(null); // For summary modal
+  
+  // Daily View State
+  const [viewMode, setViewMode] = useState<'monthly' | 'history' | 'daily'>('history'); 
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dailyAttendanceReport, setDailyAttendanceReport] = useState<any>(null);
+  const [historySessions, setHistorySessions] = useState<any[]>([]);
+
+  const handleRemoveStudent = async (studentId: string) => {
+      if (!classData) return;
+      
+      const previousClassmates = [...classmates];
+      try {
+          // Optimistic update
+          setClassmates(prev => prev.filter(s => s.id !== studentId));
+          
+          await removeStudentFromClass(studentId, String(classData.id));
+          
+          toast.success("Student removed from class");
+          setSelectedStudent(null);
+      } catch (error) {
+          console.error("Failed to remove student:", error);
+          toast.error("Failed to remove student");
+          // Revert optimistic update
+          setClassmates(previousClassmates);
+      }
+  };
+
   const [loading, setLoading] = useState(false);
 
   // Colors
@@ -73,9 +107,12 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
               attendance: {
                   present: report.summary.present,
                   late: report.summary.late,
-                  absent: report.summary.absent
+                  absent: report.summary.absent,
+                  score: report.summary.totalScore,
+                  attendancePercentage: report.summary.attendancePercentage
               },
-              enrolledClasses: [classData.name] // Just show current class for context
+              enrolledClasses: [classData.name], // Just show current class for context
+              enrolledAt: student.enrolledAt
           });
       } catch (e) {
           console.error("Failed to fetch student details", e);
@@ -87,6 +124,8 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
           });
       }
   };
+
+
   const primaryColor = isStudent ? '#3B82F6' : '#F43F5E';
   const primaryBg = isStudent ? 'bg-blue-50' : 'bg-[#FFF0F3]';
   const primaryText = isStudent ? 'text-blue-600' : 'text-[#F43F5E]';
@@ -103,18 +142,13 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
   useEffect(() => {
     if (isOpen && activeTab === 'Attendance' && classData && user) {
       const loadReport = async () => {
+        console.log(`[Frontend] Loading report for Month: ${selectedMonth}, Year: ${selectedYear}`);
         setLoading(true);
+        setAttendanceReport(null); // Clear to show loading
         try {
           if (user.role === 'teacher') {
-             if (viewingStudentHistory) {
-                 // Teacher viewing specific student history
-                 const data = await fetchStudentAttendanceReport(viewingStudentHistory, selectedMonth, selectedYear, String(classData.id));
-                 setStudentHistoryReport(data);
-             } else {
-                 // Teacher viewing class summary
-                 const data = await fetchClassAttendanceSummary(String(classData.id), selectedMonth, selectedYear);
-                 setAttendanceReport(data);
-             }
+             const data = await fetchClassAttendanceSummary(String(classData.id), selectedMonth, selectedYear);
+             setAttendanceReport(data);
           } else {
              // Student viewing own report
              const data = await fetchStudentAttendanceReport(user.id, selectedMonth, selectedYear, String(classData.id));
@@ -128,7 +162,45 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
       };
       loadReport();
     }
-  }, [isOpen, activeTab, classData, user, selectedMonth, selectedYear, viewingStudentHistory]);
+  }, [isOpen, activeTab, classData, user, selectedMonth, selectedYear]);
+
+
+
+  // Fetch Class History
+  useEffect(() => {
+    if (isOpen && activeTab === 'Attendance' && classData && user?.role === 'teacher' && viewMode === 'history') {
+      const loadHistory = async () => {
+        setLoading(true);
+        try {
+            const data = await fetchClassSessionsHistory(String(classData.id), selectedMonth, selectedYear);
+            setHistorySessions(data);
+        } catch (e) {
+          console.error("Failed to load class history", e);
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadHistory();
+    }
+  }, [isOpen, activeTab, classData, user, viewMode, selectedMonth, selectedYear]);
+
+  // Fetch Daily Attendance
+  useEffect(() => {
+    if (isOpen && activeTab === 'Attendance' && classData && user?.role === 'teacher' && viewMode === 'daily') {
+      const loadDailyReport = async () => {
+        setLoading(true);
+        try {
+            const data = await fetchDailyClassAttendance(String(classData.id), selectedDate, user.id);
+            setDailyAttendanceReport(data);
+        } catch (e) {
+          console.error("Failed to load daily report", e);
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadDailyReport();
+    }
+  }, [isOpen, activeTab, classData, user, viewMode, selectedDate]);
 
   // Fetch Students (Classmates)
   useEffect(() => {
@@ -186,7 +258,7 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                 .map((tab) => (
                 <button
                     key={tab}
-                    onClick={() => { setActiveTab(tab as any); setViewingStudentHistory(null); }}
+                    onClick={() => setActiveTab(tab as any)}
                     className={`py-4 text-sm font-bold border-b-2 transition-colors ${
                         activeTab === tab 
                         ? `${tabActiveBorder} ${tabActiveText}` 
@@ -324,56 +396,125 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                  </div>
             )}
 
+
+
+            {/* ATTENDANCE TAB */}
             <StudentSummaryModal 
                 isOpen={!!selectedStudent} 
                 onClose={() => setSelectedStudent(null)} 
                 student={selectedStudent} 
+                onRemove={handleRemoveStudent}
             />
-
-            {/* ATTENDANCE TAB */}
             {activeTab === 'Attendance' && (
                 <div className="space-y-6">
-                    {/* Controls */}
-                    <div className="flex flex-wrap gap-4 items-center justify-between">
-                         <div className="flex items-center gap-2">
-                            {viewingStudentHistory && (
-                                <button 
-                                    onClick={() => setViewingStudentHistory(null)}
-                                    className="p-1 hover:bg-gray-100 rounded-full transition-colors mr-1"
-                                >
-                                    <ChevronDown className="rotate-90" size={20} />
-                                </button>
+                    {/* Controls - Month/Year selectors */}
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                        {isStudent ? (
+                            <h3 className="text-lg font-bold text-gray-900">My Attendance</h3>
+                        ) : (
+                            <h3 className="text-lg font-bold text-gray-900">Student Attendance</h3>
+                        )}
+                        
+                        <div className="flex items-center gap-4">
+                            {!isStudent && (
+                                <>
+                                    {/* View Mode Toggle */}
+                                    {viewMode !== 'daily' && (
+                                        <div className="bg-gray-100 p-1 rounded-lg flex text-sm font-medium mr-2">
+                                            <button
+                                                onClick={() => setViewMode('history')}
+                                                className={`px-3 py-1.5 rounded-md transition-all ${viewMode === 'history' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                            >
+                                                History
+                                            </button>
+                                            <button
+                                                onClick={() => setViewMode('monthly')}
+                                                className={`px-3 py-1.5 rounded-md transition-all ${viewMode === 'monthly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                            >
+                                                Monthly
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {viewMode === 'daily' ? (
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                onClick={() => setViewMode('history')}
+                                                className="text-sm text-gray-500 hover:text-gray-900 flex items-center gap-1"
+                                            >
+                                                <ChevronDown className="rotate-90" size={16} />
+                                                Back
+                                            </button>
+                                            <span className="text-sm font-bold text-gray-900 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                                                {(() => {
+                                                    const d = new Date(selectedDate);
+                                                    return `${d.toLocaleDateString('en-US', {weekday: 'short'})} ${d.getDate()} ${d.toLocaleDateString('en-US', {month: 'short'})} ${d.getFullYear()}`;
+                                                })()}
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="relative">
+                                                <select 
+                                                    value={selectedMonth}
+                                                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                                                    className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#F43F5E] cursor-pointer shadow-sm hover:border-gray-300 transition-colors"
+                                                >
+                                                    {monthNames.map((m, i) => (
+                                                        <option key={i} value={i}>{m}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                            </div>
+                                            <div className="relative">
+                                                <select 
+                                                    value={selectedYear}
+                                                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                                    className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#F43F5E] cursor-pointer shadow-sm hover:border-gray-300 transition-colors"
+                                                >
+
+                                                    {years.map(year => (
+                                                        <option key={year} value={year}>{year}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                            </div>
+                                        </>
+                                    )}
+                                    
+
+                                </>
                             )}
-                            <h3 className="text-lg font-bold text-gray-800">
-                                {viewingStudentHistory ? 'Student History' : (isStudent ? 'My Attendance' : 'Attendance')}
-                            </h3>
-                         </div>
-                         <div className="flex gap-3">
-                            <div className="relative">
-                                <select 
-                                    value={selectedMonth}
-                                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                                    className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#F43F5E] cursor-pointer shadow-sm hover:border-gray-300 transition-colors"
-                                >
-                                    {monthNames.map((m, i) => (
-                                        <option key={i} value={i}>{m}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                            </div>
-                            <div className="relative">
-                                <select 
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(Number(e.target.value))}
-                                    className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#F43F5E] cursor-pointer shadow-sm hover:border-gray-300 transition-colors"
-                                >
-                                    <option value={2024}>2024</option>
-                                    <option value={2025}>2025</option>
-                                    <option value={2026}>2026</option>
-                                </select>
-                                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                            </div>
-                         </div>
+                            {isStudent && (
+                                <>
+                                    <div className="relative">
+                                        <select 
+                                            value={selectedMonth}
+                                            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                                            className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#3B82F6] cursor-pointer shadow-sm hover:border-gray-300 transition-colors"
+                                        >
+                                            {monthNames.map((m, i) => (
+                                                <option key={i} value={i}>{m}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                    </div>
+                                    <div className="relative">
+                                        <select 
+                                            value={selectedYear}
+                                            onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                            className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-4 pr-10 rounded-lg text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#3B82F6] cursor-pointer shadow-sm hover:border-gray-300 transition-colors"
+                                        >
+
+                                                    {years.map(year => (
+                                                        <option key={year} value={year}>{year}</option>
+                                                    ))}
+                                                </select>
+                                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
 
                     {loading ? (
@@ -384,28 +525,29 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                         <>
                             {/* Summary Cards */}
                             {/* Display summary from appropriate report source */}
-                            {(() => {
-                                const report = viewingStudentHistory ? studentHistoryReport : attendanceReport;
+                            {((isStudent && attendanceReport) || (!isStudent && viewMode === 'daily' && dailyAttendanceReport)) && (() => {
+                                const report = isStudent ? attendanceReport : dailyAttendanceReport;
+                                
                                 return (
                                     <div className="grid grid-cols-3 gap-4">
                                         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
                                             <div className="text-green-600 font-bold text-2xl mb-1 flex items-center gap-2">
                                                 <CheckCircle2 size={24} />
-                                                {report?.summary.present ?? 0}
+                                                {report?.summary?.present ?? 0}
                                             </div>
                                             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Present</p>
                                         </div>
                                         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
                                             <div className="text-orange-500 font-bold text-2xl mb-1 flex items-center gap-2">
                                                 <AlertCircle size={24} />
-                                                {report?.summary.late ?? 0}
+                                                {report?.summary?.late ?? 0}
                                             </div>
                                             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Late</p>
                                         </div>
                                         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center">
                                             <div className="text-red-500 font-bold text-2xl mb-1 flex items-center gap-2">
                                                 <XCircle size={24} />
-                                                {report?.summary.absent ?? 0}
+                                                {report?.summary?.absent ?? 0}
                                             </div>
                                             <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Absent</p>
                                         </div>
@@ -413,12 +555,126 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                                 );
                             })()}
 
-                            {/* TEACHER TABLE: Student List (when NOT viewing history) */}
-                            {!isStudent && !viewingStudentHistory && (
-                                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                                    <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-                                         <h4 className="font-bold text-gray-800 text-sm">Student Performance</h4>
+                            {/* TEACHER HISTORY VIEW */}
+                            {!isStudent && viewMode === 'history' && (
+                                <div className="space-y-3 animate-fade-in">
+                                    {historySessions.length === 0 ? (
+                                        <div className="text-center py-12 bg-white rounded-xl border border-gray-100 border-dashed">
+                                            <Calendar className="mx-auto text-gray-300 mb-2" size={32} />
+                                            <p className="text-gray-500 text-sm">No class sessions recorded for this month.</p>
+                                        </div>
+                                    ) : (
+                                        historySessions.map((session) => (
+                                            <div 
+                                                key={session.date}
+                                                onClick={() => {
+                                                    setSelectedDate(session.date);
+                                                    setViewMode('daily');
+                                                }}
+                                                className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all cursor-pointer group flex items-center justify-between"
+                                            >
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-[#FFF0F3] group-hover:text-[#F43F5E] transition-colors shrink-0">
+                                                        <Calendar size={18} />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-bold text-gray-900 text-base leading-tight">
+                                                            {new Date(session.date).toLocaleDateString('en-US', { weekday: 'short' })}, {new Date(session.date).getDate()}
+                                                        </h4>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="flex items-center gap-6">
+                                                    <div className="flex items-center gap-4 mr-2">
+                                                        <div className="flex flex-col items-center min-w-[3rem]">
+                                                            <span className="text-lg font-bold text-emerald-600 leading-none">{session.present}</span>
+                                                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mt-0.5">Present</span>
+                                                        </div>
+                                                        
+                                                        <div className="flex flex-col items-center min-w-[3rem]">
+                                                            <span className="text-lg font-bold text-orange-500 leading-none">{session.late}</span>
+                                                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mt-0.5">Late</span>
+                                                        </div>
+
+                                                        <div className="flex flex-col items-center min-w-[3rem]">
+                                                            <span className="text-lg font-bold text-red-500 leading-none">{session.absent}</span>
+                                                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mt-0.5">Absent</span>
+                                                        </div>
+                                                    </div>
+                                                    <ChevronDown className="-rotate-90 text-gray-300 group-hover:text-[#F43F5E] transition-colors" size={18} />
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+
+                            {/* DAILY VIEW TABLE */}
+                            {!isStudent && viewMode === 'daily' && (
+                                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-fade-in">
+
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
+                                            <tr>
+                                                <th className="px-6 py-4">Student</th>
+                                                <th className="px-6 py-4">Status</th>
+                                                <th className="px-6 py-4 text-center">Clock In</th>
+                                                <th className="px-6 py-4 text-center">Clock Out</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-50">
+                                            {dailyAttendanceReport?.students?.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                                                        No data for this date.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                dailyAttendanceReport?.students?.map((student: any) => (
+                                                    <tr key={student.studentId} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="px-6 py-4 font-medium text-gray-700">
+                                                            {student.name}
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${
+                                                                    student.status === 'present' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                                                                    student.status === 'late' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                                                                    'bg-red-100 text-red-700 border-red-200'
+                                                                }`}>
+                                                                    {student.status}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-center font-mono text-gray-500 text-xs">
+                                                            {formatTime(student.checkInTime)}
+                                                        </td>
+                                                        <td className="px-6 py-4 text-center font-mono text-gray-500 text-xs">
+                                                            {student.leftEarly ? (
+                                                                <span className="text-red-500 font-bold">Left Early</span>
+                                                            ) : (
+                                                                formatTime(student.checkOutTime)
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {/* TEACHER TABLE: Student List (monthly view) */}
+                            {!isStudent && viewMode === 'monthly' && (
+                                attendanceReport?.summary?.totalClasses === 0 ? (
+                                    <div className="text-center py-12 bg-white rounded-xl border border-gray-100 border-dashed animate-fade-in">
+                                        <Calendar className="mx-auto text-gray-300 mb-3" size={48} />
+                                        <p className="text-gray-900 font-medium text-lg">No sessions yet</p>
+                                        <p className="text-gray-500 text-sm mt-1">No class sessions recorded for this month.</p>
                                     </div>
+                                ) : (
+                                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+
                                     <table className="w-full text-sm text-left">
                                         <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
                                             <tr>
@@ -426,7 +682,8 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                                                 <th className="px-6 py-4 text-center">Present</th>
                                                 <th className="px-6 py-4 text-center">Late</th>
                                                 <th className="px-6 py-4 text-center">Absent</th>
-                                                <th className="px-6 py-4 text-center">Score</th>
+
+                                                <th className="px-6 py-4 text-center">Rate</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-50">
@@ -438,79 +695,82 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                                                 </tr>
                                             ) : (
                                                 attendanceReport?.students?.map((student: any) => (
-                                                    <tr 
-                                                        key={student.studentId} 
-                                                        onClick={() => setViewingStudentHistory(student.studentId)}
-                                                        className="hover:bg-gray-50 transition-colors cursor-pointer group"
-                                                    >
-                                                        <td className="px-6 py-4 font-medium text-gray-700 group-hover:text-blue-600 transition-colors">
+                                                    <tr key={student.studentId} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="px-6 py-4 font-medium text-gray-700">
                                                             {student.name}
                                                         </td>
                                                         <td className="px-6 py-4 text-center text-green-600 font-medium">{student.present}</td>
                                                         <td className="px-6 py-4 text-center text-orange-500 font-medium">{student.late}</td>
                                                         <td className="px-6 py-4 text-center text-red-500 font-medium">{student.absent}</td>
-                                                        <td className="px-6 py-4 text-center font-mono font-bold text-gray-800">{student.score}</td>
+                                                        <td className="px-6 py-4 text-center font-mono font-bold text-gray-800">{student.attendanceRate}%</td>
                                                     </tr>
                                                 ))
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
+                                )
                             )}
 
-                            {/* HISTORY TABLE: Shown for Student OR Teacher Drill-down */}
-                            {(isStudent || viewingStudentHistory) && (
-                                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-fade-in">
-                                    <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-                                        <h4 className="font-bold text-gray-800 text-sm">Attendance History</h4>
-                                        {viewingStudentHistory && attendanceReport?.students?.find((s:any) => s.studentId === viewingStudentHistory) && (
-                                            <span className="text-xs font-medium text-gray-500 bg-gray-200 px-2 py-1 rounded">
-                                                {attendanceReport.students.find((s:any) => s.studentId === viewingStudentHistory).name}
-                                            </span>
-                                        )}
+                            {/* HISTORY TABLE: Shown for student only */}
+                            {isStudent && (
+                                attendanceReport && attendanceReport.summary?.totalSessions === 0 ? (
+                                    <div className="text-center py-12 bg-white rounded-xl border border-gray-100 border-dashed animate-fade-in">
+                                        <Calendar className="mx-auto text-gray-300 mb-3" size={48} />
+                                        <p className="text-gray-900 font-medium text-lg">No sessions yet</p>
+                                        <p className="text-gray-500 text-sm mt-1">No class sessions recorded for this month.</p>
                                     </div>
-                                    <table className="w-full text-sm text-left">
-                                        <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
-                                            <tr>
-                                                <th className="px-6 py-4">Date</th>
-                                                <th className="px-6 py-4 text-center">Status</th>
-                                                <th className="px-6 py-4 text-center">Score</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50">
-                                            {(!viewingStudentHistory ? attendanceReport : studentHistoryReport)?.details?.length === 0 ? (
+                                ) : (
+                                    <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-fade-in">
+
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
                                                 <tr>
-                                                    <td colSpan={3} className="px-6 py-8 text-center text-gray-500">
-                                                        No attendance records for this month.
-                                                    </td>
+                                                    <th className="px-6 py-4">Date</th>
+                                                    <th className="px-6 py-4 text-center">Status</th>
+                                                    <th className="px-6 py-4 text-center">Clock In</th>
+                                                    <th className="px-6 py-4 text-center">Clock Out</th>
                                                 </tr>
-                                            ) : (
-                                                (!viewingStudentHistory ? attendanceReport : studentHistoryReport)?.details?.map((session: any) => (
-                                                    <tr key={session.classId + session.date} className="hover:bg-gray-50/80 transition-colors">
-                                                        <td className="px-6 py-4 font-medium text-gray-700">
-                                                            {new Date(session.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                                            <div className="text-xs text-gray-400 mt-0.5">
-                                                                {session.checkInTime ? new Date(session.checkInTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'No check-in'}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-center">
-                                                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${
-                                                                session.status === 'present' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                                                                session.status === 'late' ? 'bg-orange-100 text-orange-700 border-orange-200' :
-                                                                'bg-red-100 text-red-700 border-red-200'
-                                                            }`}>
-                                                                {session.status}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-center font-mono text-gray-500">
-                                                            {session.score} pts
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50">
+                                                {attendanceReport?.details?.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                                                            No attendance records for this month.
                                                         </td>
                                                     </tr>
-                                                ))
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                ) : (
+                                                    attendanceReport?.details?.map((session: any) => (
+                                                        <tr key={session.classId + session.date} className="hover:bg-gray-50/80 transition-colors">
+                                                            <td className="px-6 py-4 font-medium text-gray-700">
+                                                                {new Date(session.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${
+                                                                    session.status === 'present' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                                                                    session.status === 'late' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                                                                    'bg-red-100 text-red-700 border-red-200'
+                                                                }`}>
+                                                                    {session.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center font-mono text-gray-500 text-xs">
+                                                                {formatTime(session.checkInTime)}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center font-mono text-gray-500 text-xs">
+                                                                {session.leftEarly ? (
+                                                                     <span className="text-red-500 font-bold">Left Early</span>
+                                                                ) : (
+                                                                    formatTime(session.checkOutTime)
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )
                             )}
                         </>
                     )}

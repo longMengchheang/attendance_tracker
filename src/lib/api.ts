@@ -179,33 +179,24 @@ export async function fetchClassStudents(
   return data.students;
 }
 
-// Fetch all students enrolled in any of teacher's classes
-export async function fetchAllTeacherStudents(teacherId: string): Promise<Student[]> {
-  // First get all teacher's classes
-  const classes = await fetchTeacherClasses(teacherId);
-  
-  // Then fetch students for each class
-  const studentPromises = classes.map(cls => 
-    fetchClassStudents(cls.id, teacherId).catch(() => [])
-  );
-  
-  const studentsArrays = await Promise.all(studentPromises);
-  
-  // Flatten and deduplicate by student ID
-  const allStudents = studentsArrays.flat();
-  const uniqueStudents = allStudents.reduce((acc, student) => {
-    if (!acc.find(s => s.id === student.id)) {
-      acc.push(student);
-    }
-    return acc;
-  }, [] as Student[]);
-  
-  return uniqueStudents;
-}
+
 
 // ============================================================
 // Student API Functions
 // ============================================================
+
+export async function removeStudentFromClass(studentId: string, classId: string): Promise<boolean> {
+  const res = await fetch(`/api/enrollments?studentId=${studentId}&classId=${classId}`, {
+    method: 'DELETE',
+  });
+  
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to remove student');
+  }
+  
+  return true;
+}
 
 export async function fetchStudentEnrollments(studentId: string): Promise<Enrollment[]> {
   const res = await fetch(`/api/enrollments?studentId=${studentId}`);
@@ -341,7 +332,9 @@ export async function fetchStudentAttendanceReport(
     url += `&classId=${classId}`;
   }
   
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    cache: 'no-store'
+  });
   const data = await res.json();
 
   if (!res.ok) {
@@ -377,6 +370,7 @@ export async function fetchClassAttendanceSummary(
     present: number;
     late: number;
     absent: number;
+    totalClasses: number;
   };
   students: {
     studentId: string;
@@ -385,14 +379,64 @@ export async function fetchClassAttendanceSummary(
     late: number;
     absent: number;
     score: number;
+    attendanceRate: number;
   }[];
 }> {
-  const res = await fetch(`/api/attendance/class-summary?classId=${classId}&month=${month}&year=${year}`);
-  const data = await res.json();
-
+  const res = await fetch(`/api/attendance/class-summary?classId=${classId}&month=${month}&year=${year}`, {
+    cache: 'no-store'
+  });
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to fetch class attendance summary');
+    const errorData = await res.json();
+    throw new Error(errorData.error || 'Failed to fetch class attendance summary');
   }
+  return res.json();
+}
 
+export async function fetchDailyClassAttendance(
+  classId: string,
+  date: string,
+  teacherId?: string
+): Promise<{
+  summary: {
+    present: number;
+    late: number;
+    absent: number;
+  };
+  students: {
+    studentId: string;
+    name: string;
+    status: 'present' | 'late' | 'absent';
+    checkInTime: string | null;
+    checkOutTime: string | null;
+    leftEarly: boolean;
+  }[];
+}> {
+  const query = new URLSearchParams({ date });
+  if (teacherId) query.append('teacherId', teacherId);
+  
+  const res = await fetch(`/api/classes/${classId}/attendance/daily?${query.toString()}`);
+  
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.error || 'Failed to fetch daily attendance');
+  }
+  return res.json();
+}
+
+export async function fetchClassSessionsHistory(
+  classId: string,
+  month: number,
+  year: number
+): Promise<{
+  date: string;
+  present: number;
+  late: number;
+  absent: number;
+}[]> {
+  const res = await fetch(`/api/attendance/history?classId=${classId}&month=${month}&year=${year}`, {
+    cache: 'no-store'
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to fetch class history');
   return data;
 }

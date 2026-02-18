@@ -125,8 +125,8 @@ export default function DashboardPage() {
     <div className="space-y-12" onClick={() => setActiveMenuId(null)}>
       {/* Greeting Section */}
       <div>
-        <h1 className="text-3xl font-bold text-[#111827]">Good afternoon, {user?.name || 'Teacher'} 👋</h1>
-        <p className="text-gray-500 mt-2">Here's what's happening with your classes today</p>
+        <h1 className="text-3xl font-bold text-[#111827]">Welcome back, {user?.name || 'Teacher'}</h1>
+        <p className="text-gray-500 mt-2">Here's an overview of your classes</p>
       </div>
 
       {/* Stats Section */}
@@ -165,7 +165,7 @@ export default function DashboardPage() {
               {classes.map((cls) => (
               <div 
                   key={cls.id} 
-                  className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative group hover:shadow-md transition-all duration-300"
+                  className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 relative group hover:shadow-md hover:scale-[1.02] transition-all duration-300"
               >
                   {/* Header: Name and Menu */}
                   <div className="flex justify-between items-start mb-2">

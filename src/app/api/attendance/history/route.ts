@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getClassAttendanceSummary } from '@/services/attendance.service';
+import { getClassSessionsHistory } from '@/services/attendance.service';
 
 export async function GET(request: Request) {
   try {
@@ -15,8 +15,7 @@ export async function GET(request: Request) {
       );
     }
 
-    console.log(`[API] Fetching summary for Class: ${classId}, Month: ${month}, Year: ${year}`);
-    const data = await getClassAttendanceSummary(
+    const data = await getClassSessionsHistory(
       classId,
       parseInt(month),
       parseInt(year)
@@ -24,9 +23,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json(data);
   } catch (error: any) {
-    console.error('Error fetching class attendance summary:', error);
+    console.error('Error fetching class history:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch class attendance summary' },
+      { error: error.message || 'Failed to fetch class history' },
       { status: 500 }
     );
   }

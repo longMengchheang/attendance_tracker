@@ -10,17 +10,17 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signup: (name: string, email: string, password: string, role: UserRole) => Promise<{ success: boolean; error?: string }>;
-  verifyOtp: (email: string, code: string, type: string) => Promise<{ success: boolean; error?: string }>;
-  resendOtp: (email: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   updatePassword: (password: string) => Promise<{ success: boolean; error?: string }>;
+  resendOtp: (email: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const CURRENT_USER_KEY = 'attendance_current_user';
 const SESSION_KEY = 'attendance_session';
+
 
 function getCurrentUser(): Users | null {
   if (typeof window === 'undefined') return null;
@@ -76,17 +76,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state change:', event, session);
       
+      // Skip processing for password recovery events — the reset page handles its own flow.
+      // Processing these events would race with the reset page's updateUser → signOut sequence.
+      if (event === 'PASSWORD_RECOVERY' || event === 'USER_UPDATED') {
+        console.log(`Skipping AuthContext processing for event: ${event}`);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         if (session) {
           // Fetch user profile from public table to get the correct role
-          const { data: profile, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
+          let profile = null;
+          try {
+             const { data, error } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
 
-          if (error) {
-            console.error('Error fetching user profile:', error);
+             if (error) {
+               if (error.message.includes('AbortError') || error.message.includes('signal is aborted')) {
+                 console.warn('Profile fetch aborted (likely safe to ignore):', error.message);
+               } else {
+                 console.error('Error fetching user profile:', error.message, error.details, error.hint);
+               }
+             }
+             profile = data;
+          } catch (profileError) {
+             console.error('Exception fetching profile:', profileError);
+             // Ignore profile fetch errors to allow session to proceed
           }
 
           const role = (profile?.role as 'student' | 'teacher') || (session.user.user_metadata?.role as 'student' | 'teacher') || 'student';
@@ -104,8 +123,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(session);
         } else {
           // Only clear if explicitly signed out or session expired
-          // But we want to keep local state if just refreshing page and listener hasn't fired yet?
-          // Actually, if session is null, we should probably clear.
           if (event === 'SIGNED_OUT') {
              setUser(null);
              setCurrentUser(null);
@@ -209,19 +226,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/login');
   };
 
-  // Reset Password - sends reset email
+  // Reset Password - sends Email Redirect (Magic Link) for password recovery
   const resetPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const res = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+      const redirectUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/auth/callback?next=/reset-password`
+        : undefined;
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl,
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Failed to send reset email' };
+      if (error) {
+        return { success: false, error: error.message };
       }
 
       return { success: true };
@@ -234,8 +251,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updatePassword = async (password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       console.log('Attempting to update password...');
+
+      // Note: We skip explicit session check here to avoid timeouts and race conditions. 
+      // supabase.auth.updateUser will fail internaly if there is no active session.
+      
       const { error } = await supabase.auth.updateUser({
-        password: password
+          password: password
       });
 
       if (error) {
@@ -245,66 +266,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.log('Password updated successfully');
       return { success: true };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Unexpected error updating password:', error);
-      return { success: false, error: 'Network error. Please try again.' };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Network error. Please try again.'
+      };
     }
   };
 
-  // Verify OTP
-  const verifyOtp = async (email: string, code: string, type: string): Promise<{ success: boolean; error?: string }> => {
-    try {
-      let otpType: any = type;
-      if (type === 'email') {
-        otpType = 'signup';
-      }
-
-      const res = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, token: code, type: otpType }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Verification failed' };
-      }
-
-      if (data.session && data.user) {
-         const loggedInUser: Users = {
-            id: data.user.id,
-            email: data.user.email,
-            name: data.user.name || 'User',
-            role: (data.user.role as 'student' | 'teacher') || 'student',
-            created_at: new Date().toISOString(),
-         };
-         setUser(loggedInUser);
-         setCurrentUser(loggedInUser);
-         setSession(data.session);
-         
-         // Also set supabase session client-side to ensure consistency
-         // Note: we might need to be careful here if access_token format matches what setSession expects
-         // The API returns session matching Supabase session shape usually.
-         await supabase.auth.setSession({
-            access_token: data.session.accessToken,
-            refresh_token: data.session.refreshToken,
-         });
-      }
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Network error. Please try again.' };
-    }
-  };
-
-  // Resend OTP
+  // Resend OTP / Verification Email
   const resendOtp = async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const { error } = await supabase.auth.signInWithOtp({
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
         email,
         options: {
-          shouldCreateUser: false,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
@@ -314,12 +292,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { success: true };
     } catch (error) {
-      return { success: false, error: 'Network error. Please try again.' };
+       return { success: false, error: 'Network error. Please try again.' };
     }
   };
 
+
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, verifyOtp, resendOtp, logout, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, isLoading, login, signup, logout, resetPassword, updatePassword, resendOtp }}>
       {children}
     </AuthContext.Provider>
   );

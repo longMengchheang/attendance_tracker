@@ -136,7 +136,7 @@ export default function StudentSummaryModal({ isOpen, onClose, student, onRemove
             </div>
 
             {/* Attendance Summary Cards - Soft & Modern */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 gap-3">
                 {/* Present */}
                 <div className="bg-green-50/50 rounded-xl p-3 text-center transition-transform hover:scale-105 duration-200">
                     <div className="text-green-600 font-bold text-lg mb-1">{student.attendance?.present ?? 0}</div>
@@ -155,11 +155,7 @@ export default function StudentSummaryModal({ isOpen, onClose, student, onRemove
                     <p className="text-[10px] text-red-700/70 font-semibold uppercase tracking-wide">Absent</p>
                 </div>
 
-                 {/* Score */}
-                 <div className="bg-gray-50/80 rounded-xl p-3 text-center transition-transform hover:scale-105 duration-200">
-                    <div className="text-gray-800 font-bold text-lg mb-1">{score}</div>
-                    <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide">Pts</p>
-                </div>
+
             </div>
 
             {/* Actions */}

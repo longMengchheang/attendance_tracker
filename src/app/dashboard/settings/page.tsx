@@ -104,7 +104,6 @@ export default function SettingsPage() {
              </div>
              <div>
                 <div className="font-semibold text-gray-900">Password</div>
-                <div className="text-sm text-gray-500">Last changed 3 months ago</div>
              </div>
           </div>
           

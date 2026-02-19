@@ -63,6 +63,11 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
   const [attendanceReport, setAttendanceReport] = useState<any>(null);
   const [classmates, setClassmates] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<any>(null); // For summary modal
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredClassmates = classmates.filter(student => 
+    student.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
   
   // Daily View State
   const [viewMode, setViewMode] = useState<'monthly' | 'history' | 'daily'>('history'); 
@@ -354,6 +359,8 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                         <div className="relative flex-1 max-w-md">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                             <input 
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
                                 type="text" 
                                 placeholder="Search students..." 
                                 className={`w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 ${focusRing} text-gray-900`}
@@ -366,12 +373,12 @@ export default function ClassDetailsModal({ isOpen, onClose, classData }: ClassD
                             <div className="p-8 text-center flex justify-center">
                                 <Loader2 className={`animate-spin ${primaryText}`} size={24} />
                             </div>
-                        ) : classmates.length === 0 ? (
+                        ) : filteredClassmates.length === 0 ? (
                             <div className="p-8 text-center text-gray-500">
-                                No students found enrolled in this class.
+                                {searchQuery ? 'No students found matching your search.' : 'No students found enrolled in this class.'}
                             </div>
                         ) : (
-                            classmates.map((student) => (
+                            filteredClassmates.map((student) => (
                                 <div 
                                     key={student.id} 
                                     onClick={() => handleStudentClick(student)}

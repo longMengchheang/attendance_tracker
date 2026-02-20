@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserRole } from '../types';
 import { supabase, Users } from '@/lib/supabase';
@@ -21,6 +21,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const CURRENT_USER_KEY = 'attendance_current_user';
 const SESSION_KEY = 'attendance_session';
 
+// Safety timeout: if loading hasn't resolved after 8 seconds, force it
+const LOADING_TIMEOUT_MS = 8000;
 
 function getCurrentUser(): Users | null {
   if (typeof window === 'undefined') return null;
@@ -44,17 +46,53 @@ function setSession(session: any | null) {
   }
 }
 
+// Helper: fetch user profile and build Users object from a Supabase session
+async function buildUserFromSession(session: { user: { id: string; email?: string; user_metadata?: any } }): Promise<Users> {
+  let profile = null;
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', session.user.id)
+      .maybeSingle();
+
+    if (error) {
+      if (error.message.includes('AbortError') || error.message.includes('signal is aborted')) {
+        console.warn('Profile fetch aborted (likely safe to ignore):', error.message);
+      } else {
+        console.error('Error fetching user profile:', error.message, error.details, error.hint);
+      }
+    }
+    profile = data;
+  } catch (profileError) {
+    console.error('Exception fetching profile:', profileError);
+  }
+
+  const role = (profile?.role as 'student' | 'teacher') || (session.user.user_metadata?.role as 'student' | 'teacher') || 'student';
+  const name = profile?.name || session.user.user_metadata?.name || 'User';
+
+  return {
+    id: session.user.id,
+    email: session.user.email,
+    name: name,
+    role: role,
+    created_at: new Date().toISOString(),
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Users | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // Load user on mount and listen for auth changes
+  // Guard: prevents onAuthStateChange from racing with getSession() on initial mount
+  const initialLoadHandled = useRef(false);
+
   useEffect(() => {
-    // Check local storage first
+    // --- Step 1: Optimistic restore from localStorage (instant, no flicker) ---
     const storedUser = getCurrentUser();
     const storedSession = typeof window !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null;
-    
+
     setUser(storedUser);
 
     // Attempt to recover email if missing from stored user
@@ -71,69 +109,90 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('Error parsing stored session for email recovery:', e);
       }
     }
-    
-    // Set up Supabase auth listener
+
+    // --- Step 2: Hydrate from Supabase getSession() (deterministic) ---
+    // This is the critical fix: getSession() resolves isLoading on mount
+    // regardless of whether onAuthStateChange fires.
+    const hydrateSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('Initial getSession() result:', session ? 'session found' : 'no session', error || '');
+
+        if (session) {
+          const hydratedUser = await buildUserFromSession(session);
+          setUser(hydratedUser);
+          setCurrentUser(hydratedUser);
+          setSession(session);
+        } else {
+          // No valid session — clear stale localStorage data
+          if (storedUser) {
+            console.log('No active session but stale localStorage found — clearing');
+            setUser(null);
+            setCurrentUser(null);
+            setSession(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error during initial session hydration:', error);
+      } finally {
+        initialLoadHandled.current = true;
+        setIsLoading(false);
+      }
+    };
+
+    hydrateSession();
+
+    // --- Step 3: Safety timeout — absolute last resort ---
+    const safetyTimer = setTimeout(() => {
+      setIsLoading((current) => {
+        if (current) {
+          console.warn('Safety timeout: forcing isLoading to false after', LOADING_TIMEOUT_MS, 'ms');
+          initialLoadHandled.current = true;
+          return false;
+        }
+        return current;
+      });
+    }, LOADING_TIMEOUT_MS);
+
+    // --- Step 4: Listen for subsequent auth state changes ---
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state change:', event, session);
-      
+
       // Skip processing for password recovery events — the reset page handles its own flow.
-      // Processing these events would race with the reset page's updateUser → signOut sequence.
       if (event === 'PASSWORD_RECOVERY' || event === 'USER_UPDATED') {
         console.log(`Skipping AuthContext processing for event: ${event}`);
         setIsLoading(false);
         return;
       }
 
+      // If getSession() already handled the initial load, skip the first
+      // INITIAL_SESSION event to avoid a redundant profile fetch.
+      if (!initialLoadHandled.current) {
+        // getSession() hasn't finished yet — let it handle the initial load
+        // and skip this event to avoid a race condition.
+        console.log('Skipping early onAuthStateChange (getSession() in progress)');
+        return;
+      }
+
       try {
         if (session) {
-          // Fetch user profile from public table to get the correct role
-          let profile = null;
-          try {
-             const { data, error } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-
-             if (error) {
-               if (error.message.includes('AbortError') || error.message.includes('signal is aborted')) {
-                 console.warn('Profile fetch aborted (likely safe to ignore):', error.message);
-               } else {
-                 console.error('Error fetching user profile:', error.message, error.details, error.hint);
-               }
-             }
-             profile = data;
-          } catch (profileError) {
-             console.error('Exception fetching profile:', profileError);
-             // Ignore profile fetch errors to allow session to proceed
-          }
-
-          const role = (profile?.role as 'student' | 'teacher') || (session.user.user_metadata?.role as 'student' | 'teacher') || 'student';
-          const name = profile?.name || session.user.user_metadata?.name || 'User';
-
-          const loggedInUser: Users = {
-            id: session.user.id,
-            email: session.user.email,
-            name: name,
-            role: role,
-            created_at: new Date().toISOString(),
-          };
+          const loggedInUser = await buildUserFromSession(session);
           setUser(loggedInUser);
           setCurrentUser(loggedInUser);
           setSession(session);
         } else {
           // Only clear if explicitly signed out or session expired
           if (event === 'SIGNED_OUT') {
-             setUser(null);
-             setCurrentUser(null);
-             setSession(null);
+            setUser(null);
+            setCurrentUser(null);
+            setSession(null);
           }
         }
       } catch (error: any) {
         console.error('Unexpected error in auth state change:', error);
-        
+
         // Handle invalid refresh token by clearing session
-        if (error?.message?.includes('Refresh Token Not Found') || 
+        if (error?.message?.includes('Refresh Token Not Found') ||
             error?.message?.includes('Invalid Refresh Token')) {
           console.log('Clearing invalid session...');
           setUser(null);
@@ -147,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
+      clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
   }, []);
